@@ -7,16 +7,25 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # compile with debug information
 set(CMAKE_BUILD_TYPE Debug)
 
-# use system sdl, not vendored one
-find_package(SDL2 REQUIRED)
-include_directories(SDL2Test ${SDL2_INCLUDE_DIRS})
-
 add_executable(game
   src/main.c
 )
 
-# add the includes
-target_include_directories(game PRIVATE include/)
+# add my includes
+INCLUDE_DIRECTORIES(game PRIVATE include/)
 
-# link sdl 
-target_link_libraries(game ${SDL2_LIBRARIES})
+# add sdl includes and link libraries
+INCLUDE(FindPkgConfig)
+
+PKG_SEARCH_MODULE(SDL2 REQUIRED sdl2)
+PKG_SEARCH_MODULE(SDL2_image REQUIRED SDL2_image)
+
+INCLUDE_DIRECTORIES(game
+  ${SDL2_INCLUDE_DIRS}
+  ${SDL2IMAGE_INCLUDE_DIRS}
+)
+
+TARGET_LINK_LIBRARIES(game
+  ${SDL2_LIBRARIES}
+  ${SDL2IMAGE_LIBRARIES}
+)

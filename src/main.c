@@ -1,14 +1,15 @@
-#include <SDL.h>
-#include <SDL_error.h>
-#include <SDL_events.h>
-#include <SDL_surface.h>
-#include <SDL_video.h>
+#include <SDL2/SDL.h>
+#include <SDL2/SDL_error.h>
+#include <SDL2/SDL_events.h>
+#include <SDL2/SDL_image.h>
+#include <SDL2/SDL_surface.h>
+#include <SDL2/SDL_video.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 
-const int SCREEN_WIDTH = 234;
-const int SCREEN_HEIGHT = 234;
+const int SCREEN_WIDTH = 256;
+const int SCREEN_HEIGHT = 256;
 
 SDL_Window *window = NULL; // render target
 SDL_Surface *screenSurface =
@@ -43,31 +44,49 @@ bool Init() {
     return false;
   }
 
+  // i assume that this and results in an expression full of 1's
+  int imageFlags = IMG_INIT_PNG;
+  int initResult = IMG_Init(imageFlags) & imageFlags;
+  if (!initResult) {
+    printf("%016x", initResult);
+    printf("Could not load SDL image: %s\n", SDL_GetError());
+  }
+
   // get surface
   screenSurface = SDL_GetWindowSurface(window);
 
   return true;
 }
 
-SDL_Surface *LoadImage(const char *path) {
-  // loads a single bitmap image
-  image = SDL_LoadBMP(path);
-  if (!image) {
-    printf("Unable to load image: %s\n", SDL_GetError());
+SDL_Surface *LoadSurface(const char *path) {
+  SDL_Surface *loadedSurface = SDL_LoadBMP(path);
+  if (loadedSurface == NULL) {
+    printf("Could not load surface: %s\n", SDL_GetError());
     return NULL;
   }
 
-  return image;
+  // convert bmp to format of screen, so that this isn't done every blit
+  // greatly optimizes rendering!
+  SDL_Surface *optimizedSurface =
+      SDL_ConvertSurface(loadedSurface, screenSurface->format, 0);
+  if (optimizedSurface == NULL) {
+    printf("Could not optimize surface: %s\n", SDL_GetError());
+  }
+
+  // get rid of original surface
+  SDL_FreeSurface(loadedSurface);
+
+  return optimizedSurface;
 }
 
 bool LoadMedia() {
   // laod all images
   // if any load fails, ret false
-  images[KEY_PRESS_SURFACE_UP] = LoadImage("../assets/states/test0.bmp");
-  images[KEY_PRESS_SURFACE_DOWN] = LoadImage("../assets/states/test1.bmp");
-  images[KEY_PRESS_SURFACE_LEFT] = LoadImage("../assets/states/test2.bmp");
-  images[KEY_PRESS_SURFACE_RIGHT] = LoadImage("../assets/states/test3.bmp");
-  images[KEY_PRESS_SURFACE_DEFAULT] = LoadImage("../assets/states/test4.bmp");
+  images[KEY_PRESS_SURFACE_UP] = LoadSurface("../assets/states/test0.bmp");
+  images[KEY_PRESS_SURFACE_DOWN] = LoadSurface("../assets/states/test1.bmp");
+  images[KEY_PRESS_SURFACE_LEFT] = LoadSurface("../assets/states/test2.bmp");
+  images[KEY_PRESS_SURFACE_RIGHT] = LoadSurface("../assets/states/test3.bmp");
+  images[KEY_PRESS_SURFACE_DEFAULT] = LoadSurface("../assets/states/test4.bmp");
 
   for (int i = 0; i < KEY_PRESS_SURFACE_TOTAL; ++i) {
     if (images[i] == NULL) {
@@ -106,13 +125,20 @@ int main(int argc, char *argv[]) {
   bool quit = false;
   while (quit == false) {
     // fill window with color
-    // matchrgb gets the pixel format taken by the screen, the r, g, b 
+    // matchrgb gets the pixel format taken by the screen, the r, g, b
     // want, and maps it to a pixel value
     SDL_FillRect(screenSurface, NULL,
                  SDL_MapRGB(screenSurface->format, 0xFF, 0xFF, 0xFF));
 
-    // draw image
-    SDL_BlitSurface(image, NULL, screenSurface, NULL);
+    // draw image, stretching to fill
+    SDL_Rect stretch;
+
+    stretch.x = 0;
+    stretch.y = 0;
+    stretch.w = SCREEN_WIDTH;
+    stretch.h = SCREEN_HEIGHT;
+
+    SDL_BlitScaled(image, NULL, screenSurface, &stretch);
 
     // update
     SDL_UpdateWindowSurface(window);
@@ -127,7 +153,6 @@ int main(int argc, char *argv[]) {
       else if (e.type == SDL_KEYDOWN) {
         switch (e.key.keysym.sym) {
         case SDLK_UP:
-          printf("uppy!\n");
           image = images[KEY_PRESS_SURFACE_UP];
           break;
         case SDLK_DOWN:
