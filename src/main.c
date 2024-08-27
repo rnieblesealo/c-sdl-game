@@ -5,6 +5,7 @@
 #include <SDL2/SDL_surface.h>
 #include <SDL2/SDL_video.h>
 #include <SDL_keycode.h>
+#include <SDL_rect.h>
 #include <SDL_render.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -40,6 +41,19 @@ SDL_Rect outlineRect = {SCREEN_WIDTH / 6, SCREEN_HEIGHT / 6,
                         SCREEN_WIDTH * 2 / 3, SCREEN_HEIGHT * 2 / 3};
 
 SDL_Rect screenRect = {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT};
+
+// viewports
+SDL_Rect topLeftViewport = {0, 0, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2};
+
+SDL_Rect topRightViewport = {SCREEN_WIDTH / 2, 0, SCREEN_WIDTH / 2,
+                             SCREEN_WIDTH / 2};
+
+SDL_Rect bottomViewport = {
+    0,
+    SCREEN_HEIGHT / 2,
+    SCREEN_WIDTH,
+    SCREEN_HEIGHT / 2,
+};
 
 bool Init() {
   // start sdl
@@ -210,8 +224,15 @@ int main(int argc, char *argv[]) {
 
     // render texture
     // SDL_RenderCopy(renderer, image, NULL, NULL);
-    // render geometry
 
+    // render viewports
+    // call before rendering to draw relative to this viewport
+    // as if it were the whole screen
+    // SDL_RenderSetViewport(renderer, &topLeftViewport); 
+    // SDL_RenderSetViewport(renderer, &topRightViewport); 
+    // SDL_RenderSetViewport(renderer, &bottomViewport); 
+
+    // render geometry
     SDL_SetRenderDrawColor(renderer, 0xFF, 0xFF, 0x00, 0xFF);
     SDL_RenderFillRect(renderer, &fillRect);
 
@@ -219,12 +240,13 @@ int main(int argc, char *argv[]) {
     SDL_RenderDrawRect(renderer, &outlineRect);
 
     SDL_SetRenderDrawColor(renderer, 0xFF, 0x00, 0x00, 0xFF);
-    SDL_RenderDrawLine(renderer, 0, SCREEN_HEIGHT / 2, SCREEN_WIDTH, SCREEN_HEIGHT / 2);
-   
-    for (int i = 0; i < SCREEN_HEIGHT; i += 10){
+    SDL_RenderDrawLine(renderer, 0, SCREEN_HEIGHT / 2, SCREEN_WIDTH,
+                       SCREEN_HEIGHT / 2);
+
+    for (int i = 0; i < SCREEN_HEIGHT; i += 10) {
       SDL_RenderDrawPoint(renderer, SCREEN_WIDTH / 2, i);
     }
-
+    
     // update screen
     SDL_RenderPresent(renderer);
   }
