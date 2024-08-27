@@ -17,15 +17,18 @@ INCLUDE_DIRECTORIES(game PRIVATE include/)
 # add sdl includes and link libraries
 INCLUDE(FindPkgConfig)
 
-PKG_SEARCH_MODULE(SDL2 REQUIRED sdl2)
-PKG_SEARCH_MODULE(SDL2_image REQUIRED SDL2_image)
+find_package(SDL2 REQUIRED)
+find_package(SDL2_image REQUIRED)
 
 INCLUDE_DIRECTORIES(game
   ${SDL2_INCLUDE_DIRS}
   ${SDL2IMAGE_INCLUDE_DIRS}
 )
 
+# i don't know what this does
+# but i do know i fucking hate cmake
 TARGET_LINK_LIBRARIES(game
-  ${SDL2_LIBRARIES}
-  ${SDL2IMAGE_LIBRARIES}
+  SDL2::SDL2main
+  SDL2::SDL2
+  SDL2_image::SDL2_image
 )
