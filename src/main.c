@@ -4,6 +4,7 @@
 #include <SDL2/SDL_image.h>
 #include <SDL2/SDL_surface.h>
 #include <SDL2/SDL_video.h>
+#include <SDL_keycode.h>
 #include <SDL_render.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -13,7 +14,8 @@ const int SCREEN_WIDTH = 256;
 const int SCREEN_HEIGHT = 256;
 
 SDL_Window *window = NULL; // render target
-SDL_Surface *screenSurface = NULL; // surface (2d image) contained by render target
+SDL_Surface *screenSurface =
+    NULL; // surface (2d image) contained by render target
 
 enum KeyPressSurfaces {
   KEY_PRESS_SURFACE_DEFAULT,
@@ -24,26 +26,20 @@ enum KeyPressSurfaces {
   KEY_PRESS_SURFACE_TOTAL
 };
 
-// renderers work with textures; they use hardware as opposed to blitting (?), thus more efficient!
+// renderers work with textures; they use hardware as opposed to blitting (?),
+// thus more efficient!
 SDL_Renderer *renderer = NULL;
 SDL_Texture *images[KEY_PRESS_SURFACE_TOTAL];
 SDL_Texture *image = NULL;
 
 // geometry rendering!
-SDL_Rect fillRect = {
-  SCREEN_WIDTH / 4,
-  SCREEN_HEIGHT / 4,
-  SCREEN_WIDTH / 2,
-  SCREEN_HEIGHT / 2
-};
+SDL_Rect fillRect = {SCREEN_WIDTH / 4, SCREEN_HEIGHT / 4, SCREEN_WIDTH / 2,
+                     SCREEN_HEIGHT / 2};
 
+SDL_Rect outlineRect = {SCREEN_WIDTH / 6, SCREEN_HEIGHT / 6,
+                        SCREEN_WIDTH * 2 / 3, SCREEN_HEIGHT * 2 / 3};
 
-SDL_Rect outlineRect = {
-  SCREEN_WIDTH / 6,
-  SCREEN_HEIGHT / 6,
-  SCREEN_WIDTH * 2 / 3,
-  SCREEN_HEIGHT * 2 / 3
-};
+SDL_Rect screenRect = {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT};
 
 bool Init() {
   // start sdl
@@ -53,7 +49,9 @@ bool Init() {
   }
 
   // make window
-  window = SDL_CreateWindow("Game", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN);
+  window =
+      SDL_CreateWindow("Game", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
+                       SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN);
   if (window == NULL) {
     printf("Window creation failed: %s\n", SDL_GetError());
     return false;
@@ -61,7 +59,7 @@ bool Init() {
 
   // make renderer for window
   renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
-  if (renderer == NULL){
+  if (renderer == NULL) {
     printf("Could not create renderer :%s\n", SDL_GetError());
     return false;
   }
@@ -93,7 +91,8 @@ SDL_Surface *LoadSurface(const char *path) {
 
   // convert bmp to format of screen, so that this isn't done every blit
   // greatly optimizes rendering!
-  SDL_Surface *optimizedSurface = SDL_ConvertSurface(loadedSurface, screenSurface->format, 0);
+  SDL_Surface *optimizedSurface =
+      SDL_ConvertSurface(loadedSurface, screenSurface->format, 0);
   if (optimizedSurface == NULL) {
     printf("Could not optimize surface: %s\n", SDL_GetError());
   }
@@ -104,17 +103,17 @@ SDL_Surface *LoadSurface(const char *path) {
   return optimizedSurface;
 }
 
-SDL_Texture *LoadTexture(const char* path){
-  
+SDL_Texture *LoadTexture(const char *path) {
+
   // load raw surface image
-  SDL_Surface* tSurface = IMG_Load(path);
-  if (tSurface == NULL){
+  SDL_Surface *tSurface = IMG_Load(path);
+  if (tSurface == NULL) {
     printf("Unable to load image: %s\n", SDL_GetError());
     return NULL;
   }
 
   // make texture from it
-  SDL_Texture* nTexture = SDL_CreateTextureFromSurface(renderer, tSurface); 
+  SDL_Texture *nTexture = SDL_CreateTextureFromSurface(renderer, tSurface);
 
   // free original surface
   free(tSurface);
@@ -179,6 +178,9 @@ int main(int argc, char *argv[]) {
       // set image depending on keydown
       else if (e.type == SDL_KEYDOWN) {
         switch (e.key.keysym.sym) {
+        case SDLK_ESCAPE:
+          quit = true;
+          break;
         case SDLK_UP:
           image = images[KEY_PRESS_SURFACE_UP];
           break;
@@ -197,21 +199,31 @@ int main(int argc, char *argv[]) {
         }
       }
     }
-  
+
     // clear screen
     SDL_RenderClear(renderer);
 
+    // fill screen
+    // why doesnt the call from l77 take effect here?
+    SDL_SetRenderDrawColor(renderer, 0x00, 0x00, 0x00, 0xFF);
+    SDL_RenderFillRect(renderer, &screenRect);
+
     // render texture
-    // SDL_RenderCopy(renderer, image, NULL, NULL); 
-
+    // SDL_RenderCopy(renderer, image, NULL, NULL);
     // render geometry
+
     SDL_SetRenderDrawColor(renderer, 0xFF, 0xFF, 0x00, 0xFF);
-
     SDL_RenderFillRect(renderer, &fillRect);
-    
-    SDL_SetRenderDrawColor(renderer, 0xFF, 0xFF, 0xFF, 0xFF);
 
+    SDL_SetRenderDrawColor(renderer, 0x00, 0xFF, 0x00, 0xFF);
     SDL_RenderDrawRect(renderer, &outlineRect);
+
+    SDL_SetRenderDrawColor(renderer, 0xFF, 0x00, 0x00, 0xFF);
+    SDL_RenderDrawLine(renderer, 0, SCREEN_HEIGHT / 2, SCREEN_WIDTH, SCREEN_HEIGHT / 2);
+   
+    for (int i = 0; i < SCREEN_HEIGHT; i += 10){
+      SDL_RenderDrawPoint(renderer, SCREEN_WIDTH / 2, i);
+    }
 
     // update screen
     SDL_RenderPresent(renderer);
