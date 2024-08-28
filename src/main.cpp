@@ -48,7 +48,7 @@ bool Init() {
   }
 
   // adjust renderer color used for various operations (?)
-  SDL_SetRenderDrawColor(renderer, 0x00, 0x00, 0x00, 0xFF);
+  SDL_SetRenderDrawColor(renderer, 0x00, 0xFF, 0xFF, 0xFF);
 
   // start up sdl image loader
   int imageFlags = IMG_INIT_PNG; // this bitmask should result in a 1
