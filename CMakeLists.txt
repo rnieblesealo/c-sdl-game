@@ -8,7 +8,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_BUILD_TYPE Debug)
 
 add_executable(game
-  src/main.c
+  src/main.cpp
 )
 
 # add my includes
