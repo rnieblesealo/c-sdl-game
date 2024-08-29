@@ -14,6 +14,7 @@
 
 const int SCREEN_WIDTH = 512;
 const int SCREEN_HEIGHT = 448;
+const int GLOB_SCALE = 5;
 
 SDL_Window *window = NULL; // render target
 SDL_Surface *screenSurface = NULL; // screen surface
@@ -24,7 +25,6 @@ SDL_Rect screenRect = {
   SCREEN_WIDTH, 
   SCREEN_HEIGHT
 };
-
 
 bool Init() {
   // start sdl
@@ -48,7 +48,7 @@ bool Init() {
   }
 
   // adjust renderer color used for various operations (?)
-  SDL_SetRenderDrawColor(renderer, 0x00, 0xFF, 0xFF, 0xFF);
+  SDL_SetRenderDrawColor(renderer, 0xFF, 0xFF, 0xFF, 0xFF);
 
   // start up sdl image loader
   int imageFlags = IMG_INIT_PNG; // this bitmask should result in a 1
@@ -94,7 +94,7 @@ public:
    
     // make texture w/color key
     SDL_Texture *nTexture = SDL_CreateTextureFromSurface(renderer, lSurf);
-
+ 
     if (nTexture == NULL){
       printf("Could not create texture: %s\n", SDL_GetError());
       return false;
@@ -121,7 +121,7 @@ public:
     }
   }
 
-  void Render(int x, int y){
+  void Render(int x, int y, SDL_Rect *clip = NULL){
     // set render space on screen
     // sprite will be stretched to match
     SDL_Rect renderDest = {
@@ -130,9 +130,16 @@ public:
       width * scale,
       height * scale 
     };
+    
+    // give dest rect the dimensions of the src rect
+    if (clip != NULL){
+      renderDest.w = clip->w * scale;
+      renderDest.h = clip->h * scale;
+    }
 
     // render to screen
-    SDL_RenderCopy(renderer, texture, NULL, &renderDest);
+    // pass in clip as src rect
+    SDL_RenderCopy(renderer, texture, clip, &renderDest);
   }
 
   int GetWidth(){
@@ -155,25 +162,42 @@ private:
   int scale;
 };
 
-LTexture tCharacter;
 LTexture tBackground;
+
+// character frame clips
+LTexture spriteSheet;
+SDL_Rect spriteClips[2];
 
 bool LoadMedia(){
   bool success = true;
-  
-  if (!tCharacter.LoadFromFile("../assets/ness.png")){
+
+  if (!spriteSheet.LoadFromFile("../assets/ness.png")){
     printf("Could not load image: %s\n", SDL_GetError());
     success = false;
   }
+  
+  spriteClips[0] = {
+    0,
+    0,
+    16,
+    16
+  };
 
-  tCharacter.SetScale(5);
+  spriteClips[1] = {
+    0,
+    16,
+    16,
+    16
+  };
+
+  spriteSheet.SetScale(GLOB_SCALE);
 
   return success;
 }
 
 void Close() {
   // free loaded images
-  tCharacter.Free();
+  spriteSheet.Free();
   tBackground.Free();
 
   // free window, renderer mem
@@ -228,7 +252,8 @@ int main(int argc, char *argv[]) {
     SDL_RenderClear(renderer);
     
     // draw
-    tCharacter.Render(0, 0);
+    spriteSheet.Render(0, 0, &spriteClips[0]);
+    spriteSheet.Render(16 * GLOB_SCALE, 0, &spriteClips[1]);
 
     // update screen
     SDL_RenderPresent(renderer);
