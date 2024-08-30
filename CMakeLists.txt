@@ -19,10 +19,12 @@ INCLUDE(FindPkgConfig)
 
 find_package(SDL2 REQUIRED)
 find_package(SDL2_image REQUIRED)
+find_package(SDL2_ttf REQUIRED)
 
 INCLUDE_DIRECTORIES(game
   ${SDL2_INCLUDE_DIRS}
   ${SDL2IMAGE_INCLUDE_DIRS}
+  ${SDL2TTF_INCLUDE_DIRS}
 )
 
 # i don't know what this does
@@ -31,4 +33,5 @@ TARGET_LINK_LIBRARIES(game
   SDL2::SDL2main
   SDL2::SDL2
   SDL2_image::SDL2_image
+  SDL2_ttf::SDL2_ttf
 )
