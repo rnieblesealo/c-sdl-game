@@ -2,13 +2,14 @@
 #include <SDL2/SDL_error.h>
 #include <SDL2/SDL_events.h>
 #include <SDL2/SDL_image.h>
+#include <SDL2/SDL_keycode.h>
+#include <SDL2/SDL_pixels.h>
+#include <SDL2/SDL_rect.h>
+#include <SDL2/SDL_render.h>
 #include <SDL2/SDL_surface.h>
+#include <SDL2/SDL_timer.h>
+#include <SDL2/SDL_ttf.h>
 #include <SDL2/SDL_video.h>
-#include <SDL_keycode.h>
-#include <SDL_pixels.h>
-#include <SDL_rect.h>
-#include <SDL_render.h>
-#include <SDL_timer.h>
 #include <chrono>
 #include <stdio.h>
 #include <string.h>
@@ -16,6 +17,7 @@
 const int SCREEN_WIDTH = 800;
 const int SCREEN_HEIGHT = 800;
 const int GLOB_SCALE = 8;
+const int GLOB_FONTSIZE = 32;
 
 SDL_Window *window = NULL;         // render target
 SDL_Surface *screenSurface = NULL; // screen surface
@@ -30,6 +32,10 @@ typedef enum Inputs { UP, DOWN, LEFT, RIGHT } Inputs;
 
 const int KEY_COUNT = 4;
 bool KEYS[KEY_COUNT];
+
+// font
+TTF_Font *gFont = NULL;
+SDL_Rect statusBarBG; 
 
 bool Init() {
   // start sdl
@@ -59,14 +65,20 @@ bool Init() {
     return false;
   }
 
-  // adjust renderer color used for various operations (?)
-  SDL_SetRenderDrawColor(renderer, 0xFF, 0xFF, 0xFF, 0xFF);
+  // adjust renderer color used 
+  SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
 
   // start up sdl image loader
   int imageFlags = IMG_INIT_PNG; // this bitmask should result in a 1
   int initResult = IMG_Init(imageFlags) & imageFlags;
   if (!initResult) {
     printf("Could not load SDL image: %s\n", SDL_GetError());
+    return false;
+  }
+
+  // start ttf loader
+  if (TTF_Init() == -1) {
+    printf("Could not load SDL ttf: %s\n", SDL_GetError());
     return false;
   }
 
@@ -87,9 +99,39 @@ public:
     texture = NULL;
     width = 0;
     height = 0;
+    scale = 0;
   }
 
   ~LTexture() { Free(); }
+
+  bool LoadFromRenderedText(const char *text, SDL_Color tColor) {
+    // free old texture
+    Free();
+
+    // render text
+    SDL_Surface *tSurf = TTF_RenderText_Solid(gFont, text, tColor);
+    if (tSurf == NULL) {
+      printf("Unable to render text: %s\n", SDL_GetError());
+      return false;
+    }
+
+    // create texture
+    texture = SDL_CreateTextureFromSurface(renderer, tSurf);
+    if (tSurf == NULL) {
+      printf("Unable to make texture from text: %s\n", SDL_GetError());
+      return false;
+    }
+
+    // because we're already giving fontsize, it's unnecessary to set scale too
+    SetScale(1);
+
+    width = tSurf->w;
+    height = tSurf->h;
+
+    SDL_FreeSurface(tSurf);
+
+    return true;
+  }
 
   bool LoadFromFile(const char *path) {
     // remove pre-existing texture
@@ -104,8 +146,7 @@ public:
     }
 
     // set color key to black
-    SDL_SetColorKey(lSurf, SDL_TRUE,
-                    SDL_MapRGB(lSurf->format, 0x00, 0x00, 0x00));
+    SDL_SetColorKey(lSurf, SDL_TRUE, SDL_MapRGB(lSurf->format, 0, 0, 0));
 
     // make texture w/color key
     SDL_Texture *nTexture = SDL_CreateTextureFromSurface(renderer, lSurf);
@@ -261,25 +302,41 @@ SDL_Rect spriteClips[] = {
 
 LSprite characterSprite(&tSpriteSheet, spriteClips, 2);
 
+// random text
+LTexture tSampleText;
+
 bool LoadMedia() {
   bool success = true;
 
+  // load font
+  gFont = TTF_OpenFont("../assets/pixel-font.ttf", GLOB_FONTSIZE);
+  if (gFont == NULL) {
+    printf("Failed to load gFont: %s\n", SDL_GetError());
+    success = false;
+  }
+
+  // load text
+  tSampleText.LoadFromRenderedText("Sample Text", {255, 255, 255});
+
+  // define statusbar bg from text size
+  statusBarBG = {
+    0,
+    SCREEN_HEIGHT - tSampleText.GetHeight() - 10,
+    SCREEN_WIDTH,
+    tSampleText.GetHeight() + 10
+  };
+
+  // bg
   if (!tBackground.LoadFromFile("../assets/grass.png")) {
     printf("Could not load image: %s\n", SDL_GetError());
     success = false;
   }
 
-  // this makes grass red
-  // tBackground.ModColor(255, 0, 255);
-
+  // char sprite
   if (!tSpriteSheet.LoadFromFile("../assets/ness.png")) {
     printf("Could not load image: %s\n", SDL_GetError());
     success = false;
   }
-
-  // this makes the char abt. half as opaque
-  // tSpriteSheet.SetBlendMode(SDL_BLENDMODE_BLEND);
-  // tSpriteSheet.ModAlpha(125);
 
   spriteClips[0] = {0, 0, 16, 16};
 
@@ -399,7 +456,15 @@ int main(int argc, char *argv[]) {
 
     // draw
     tBackground.RenderFill();
+
     characterSprite.Render(charPosX, charPosY);
+
+    // text with background
+    SDL_RenderFillRect(renderer, &statusBarBG); 
+    tSampleText.Render(
+      (statusBarBG.w / 2) - (tSampleText.GetWidth() / 2), 
+      statusBarBG.y + (statusBarBG.h - tSampleText.GetHeight()) / 2
+    );
 
     // update screen
     SDL_RenderPresent(renderer);
