@@ -18,81 +18,37 @@ const int SCREEN_WIDTH = 800;
 const int SCREEN_HEIGHT = 800;
 const int GLOB_SCALE = 8;
 const int GLOB_FONTSIZE = 32;
+const int KEY_COUNT = 4;
+const char *ASSET_PATH = "../assets";
 
-SDL_Window *window = NULL;         // render target
-SDL_Surface *screenSurface = NULL; // screen surface
-SDL_Renderer *renderer = NULL;     // work with textures; hardware blitting
-
-// we can initialize rects like this because they're structs
-// structs are like arrays with unevenly sized elements
+SDL_Window *window = NULL;
+SDL_Surface *screenSurface = NULL;
+SDL_Renderer *renderer = NULL;
 SDL_Rect screenRect = {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT};
 
-// inputs; used to check iskeydown
-typedef enum Inputs { UP, DOWN, LEFT, RIGHT } Inputs;
+TTF_Font *gFont = NULL;
+SDL_Rect statusBarBG;
 
-const int KEY_COUNT = 4;
+typedef enum Inputs { UP, DOWN, LEFT, RIGHT } Inputs;
 bool KEYS[KEY_COUNT];
 
-// font
-TTF_Font *gFont = NULL;
-SDL_Rect statusBarBG; 
+auto lastUpdateTime = std::chrono::high_resolution_clock::now();
 
-bool Init() {
-  // start sdl
-  if (SDL_Init(SDL_INIT_VIDEO) < 0) {
-    printf("SDL init failed: %s\n", SDL_GetError());
-    return false;
-  }
+float targetFps = 120;
+float dt = 0;
 
-  // make window
-  window =
-      SDL_CreateWindow("Game", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-                       SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN);
-  if (window == NULL) {
-    printf("Window creation failed: %s\n", SDL_GetError());
-    return false;
-  }
+int charPosX = 0;
+int charPosY = 0;
+int charSpeed = 5;
 
-  // make renderer for window
-  renderer = SDL_CreateRenderer(
-      window, -1,
-      SDL_RENDERER_ACCELERATED); // we can | SDL_RENDERER_PRESENTVSYNC to enable
-                                 // that, but don't; already have target fps
-                                 // system
+typedef enum LButtonSprite{
+  BUTTON_SPRITE_MOUSE_OUT,
+  BUTTON_SPRITE_MOUSE_OVER_MOVING,
+  BUTTON_SPRITE_MOUSE_DOWN,
+  BUTTON_SPRITE_MOUSE_UP,
+  BUTTON_SPRITE_TOTAL
+} LButtonSprite;
 
-  if (renderer == NULL) {
-    printf("Could not create renderer :%s\n", SDL_GetError());
-    return false;
-  }
-
-  // adjust renderer color used 
-  SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
-
-  // start up sdl image loader
-  int imageFlags = IMG_INIT_PNG; // this bitmask should result in a 1
-  int initResult = IMG_Init(imageFlags) & imageFlags;
-  if (!initResult) {
-    printf("Could not load SDL image: %s\n", SDL_GetError());
-    return false;
-  }
-
-  // start ttf loader
-  if (TTF_Init() == -1) {
-    printf("Could not load SDL ttf: %s\n", SDL_GetError());
-    return false;
-  }
-
-  // get window surface
-  screenSurface = SDL_GetWindowSurface(window);
-
-  // set keys
-  for (int i = 0; i < KEY_COUNT; ++i)
-    KEYS[i] = false;
-
-  return true;
-}
-
-// texture wrapper
 class LTexture {
 public:
   LTexture() {
@@ -104,6 +60,10 @@ public:
 
   ~LTexture() { Free(); }
 
+
+  // anything inside #if will be ignored by compiler if SDL_TTF ... macro is not defined
+  #if defined(SDL_TTF_MAJOR_VERSION)
+  
   bool LoadFromRenderedText(const char *text, SDL_Color tColor) {
     // free old texture
     Free();
@@ -132,6 +92,8 @@ public:
 
     return true;
   }
+
+  #endif
 
   bool LoadFromFile(const char *path) {
     // remove pre-existing texture
@@ -244,8 +206,10 @@ private:
   int scale;
 };
 
-auto lastUpdateTime = std::chrono::high_resolution_clock::now();
-float dt = 0;
+LTexture tBackground;
+LTexture tSampleText;
+LTexture tSpriteSheet;
+LTexture tButton;
 
 class LSprite {
 public:
@@ -258,6 +222,24 @@ public:
     currentFrame = 0;
     fTimer = 0;
     fps = 8;
+  }
+  
+  void SetFPS(int fps){
+    if (fps < 0){
+      printf("Could not set FPS! Out of bounds.\n");
+      return;
+    }
+
+    this->fps = fps;
+  }
+
+  void SetFrame(int f) {
+    if (f < 0 || f >= nFrames) {
+      printf("Could not set frame! Out of bounds.\n");
+      return;
+    }
+
+    this->currentFrame = f;
   }
 
   void Render(int x, int y) {
@@ -274,10 +256,6 @@ public:
 
     // draw normal
     spriteSheet->Render(x, y, &spriteClips[currentFrame]);
-
-    // draw rotated!
-    // spriteSheet->RenderRotated(x, y, &spriteClips[currentFrame], 90, NULL,
-    // SDL_FLIP_NONE);
   }
 
 private:
@@ -290,41 +268,100 @@ private:
   float fTimer;
 };
 
-LTexture tBackground;
+class LButton {
+  public:
+    LButton(){
+    
+    }
 
-// character sprite
-LTexture tSpriteSheet;
-SDL_Rect spriteClips[] = {
-    // frame 1
-    {0, 0, 16, 16},
-    // frame 2
-    {0, 16, 16, 16}};
+  void SetPosition(int x, int y);
+  void HandleEvent(SDL_Event *e);
+  void Render();
 
-LSprite characterSprite(&tSpriteSheet, spriteClips, 2);
+private:
+  SDL_Point mPosition;
+  LButtonSprite mCurrentSprite;
+};
 
-// random text
-LTexture tSampleText;
+SDL_Rect charSpriteClips[] = {{0, 0, 16, 16}, {0, 16, 16, 16}};
+
+LSprite characterSprite(&tSpriteSheet, charSpriteClips, 2);
+
+SDL_Rect buttonSpriteClips[] = {{0, 0, 8, 8}, {0, 8, 8, 8}, {0, 16, 8, 8}};
+
+LSprite buttonSprite(&tButton, buttonSpriteClips, 3);
+
+bool Init() {
+  // start sdl
+  if (SDL_Init(SDL_INIT_VIDEO) < 0) {
+    printf("SDL init failed: %s\n", SDL_GetError());
+    return false;
+  }
+
+  // make window
+  window =
+      SDL_CreateWindow("Game", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
+                       SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN);
+  if (window == NULL) {
+    printf("Window creation failed: %s\n", SDL_GetError());
+    return false;
+  }
+
+  // make renderer for window
+  renderer = SDL_CreateRenderer(
+      window, -1,
+      SDL_RENDERER_ACCELERATED); // we can | SDL_RENDERER_PRESENTVSYNC to enable
+                                 // that, but don't; already have target fps
+                                 // system
+
+  if (renderer == NULL) {
+    printf("Could not create renderer :%s\n", SDL_GetError());
+    return false;
+  }
+
+  // adjust renderer color used
+  SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
+
+  // start up sdl image loader
+  int imageFlags = IMG_INIT_PNG; // this bitmask should result in a 1
+  int initResult = IMG_Init(imageFlags) & imageFlags;
+  if (!initResult) {
+    printf("Could not load SDL image: %s\n", SDL_GetError());
+    return false;
+  }
+
+  // start ttf loader
+  if (TTF_Init() == -1) {
+    printf("Could not load SDL ttf: %s\n", SDL_GetError());
+    return false;
+  }
+
+  // get window surface
+  screenSurface = SDL_GetWindowSurface(window);
+
+  // set keys
+  for (int i = 0; i < KEY_COUNT; ++i)
+    KEYS[i] = false;
+
+  return true;
+}
 
 bool LoadMedia() {
   bool success = true;
 
-  // load font
+  // font
   gFont = TTF_OpenFont("../assets/pixel-font.ttf", GLOB_FONTSIZE);
   if (gFont == NULL) {
     printf("Failed to load gFont: %s\n", SDL_GetError());
     success = false;
   }
 
-  // load text
+  // text
   tSampleText.LoadFromRenderedText("Sample Text", {255, 255, 255});
 
-  // define statusbar bg from text size
-  statusBarBG = {
-    0,
-    SCREEN_HEIGHT - tSampleText.GetHeight() - 10,
-    SCREEN_WIDTH,
-    tSampleText.GetHeight() + 10
-  };
+  // mk statusbar bg from text surf size
+  statusBarBG = {0, SCREEN_HEIGHT - tSampleText.GetHeight() - 10, SCREEN_WIDTH,
+                 tSampleText.GetHeight() + 10};
 
   // bg
   if (!tBackground.LoadFromFile("../assets/grass.png")) {
@@ -338,10 +375,14 @@ bool LoadMedia() {
     success = false;
   }
 
-  spriteClips[0] = {0, 0, 16, 16};
+  // button sprite
+  if (!tButton.LoadFromFile("../assets/button.png")) {
+    printf("Could not load image: %s\n", SDL_GetError());
+    success = false;
+  }
 
-  spriteClips[1] = {0, 16, 16, 16};
-
+  buttonSprite.SetFPS(0);
+  
   return success;
 }
 
@@ -349,6 +390,8 @@ void Close() {
   // free loaded images
   tSpriteSheet.Free();
   tBackground.Free();
+  tSpriteSheet.Free();
+  tButton.Free();
 
   // free window, renderer mem
   SDL_DestroyRenderer(renderer);
@@ -360,13 +403,6 @@ void Close() {
   IMG_Quit();
   SDL_Quit();
 }
-
-// limits fps; adapt to set to a framerate
-float targetFps = 120;
-
-int charPosX = 0;
-int charPosY = 0;
-int charSpeed = 5;
 
 int main(int argc, char *argv[]) {
   if (!Init())
@@ -460,11 +496,13 @@ int main(int argc, char *argv[]) {
     characterSprite.Render(charPosX, charPosY);
 
     // text with background
-    SDL_RenderFillRect(renderer, &statusBarBG); 
-    tSampleText.Render(
-      (statusBarBG.w / 2) - (tSampleText.GetWidth() / 2), 
-      statusBarBG.y + (statusBarBG.h - tSampleText.GetHeight()) / 2
-    );
+    SDL_RenderFillRect(renderer, &statusBarBG);
+    tSampleText.Render((statusBarBG.w / 2) - (tSampleText.GetWidth() / 2),
+                       statusBarBG.y +
+                           (statusBarBG.h - tSampleText.GetHeight()) / 2);
+
+    // button
+    buttonSprite.Render(0, 0);
 
     // update screen
     SDL_RenderPresent(renderer);
