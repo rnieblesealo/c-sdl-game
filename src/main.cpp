@@ -2,7 +2,10 @@
 #include <SDL2/SDL_error.h>
 #include <SDL2/SDL_events.h>
 #include <SDL2/SDL_image.h>
+#include <SDL2/SDL_keyboard.h>
 #include <SDL2/SDL_keycode.h>
+#include <SDL2/SDL_mixer.h>
+#include <SDL2/SDL_mouse.h>
 #include <SDL2/SDL_pixels.h>
 #include <SDL2/SDL_rect.h>
 #include <SDL2/SDL_render.h>
@@ -10,7 +13,7 @@
 #include <SDL2/SDL_timer.h>
 #include <SDL2/SDL_ttf.h>
 #include <SDL2/SDL_video.h>
-#include <SDL_mouse.h>
+#include <SDL_scancode.h>
 #include <chrono>
 #include <stdio.h>
 #include <string.h>
@@ -23,8 +26,8 @@ const int GLOB_FONTSIZE = 32;
 
 const int KEY_COUNT = 4;
 
-const int BUTTON_WIDTH = 100;
-const int BUTTON_HEIGHT = 100;
+const int BUTTON_WIDTH = 89; 
+const int BUTTON_HEIGHT = 89;
 
 SDL_Window *window = NULL;
 SDL_Surface *screenSurface = NULL;
@@ -34,8 +37,8 @@ SDL_Rect screenRect = {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT};
 TTF_Font *gFont = NULL;
 SDL_Rect statusBarBG;
 
-typedef enum Inputs { UP, DOWN, LEFT, RIGHT } Inputs;
-bool KEYS[KEY_COUNT];
+typedef enum Inputs { UP, DOWN, LEFT, RIGHT, PAUSE, EXIT, TOTAL_INPUTS } Inputs;
+bool KEYS[TOTAL_INPUTS];
 
 auto lastUpdateTime = std::chrono::high_resolution_clock::now();
 
@@ -45,6 +48,11 @@ float dt = 0;
 int charPosX = 0;
 int charPosY = 0;
 int charSpeed = 5;
+float charFootstepTimer = 0;
+
+// music, sfx
+Mix_Music *music = NULL;
+Mix_Chunk *step = NULL;
 
 typedef enum LButtonState {
   BUTTON_STATE_YELLOW,
@@ -194,9 +202,9 @@ public:
 
     SDL_RenderCopy(renderer, texture, NULL, &renderDest);
   }
-  
-  void RenderIgnoreScale(int x, int y, int w, int h, SDL_Rect *clip = NULL){
-    // renders ignoring set scale; useful for ui that needs specific dimensions 
+
+  void RenderIgnoreScale(int x, int y, int w, int h, SDL_Rect *clip = NULL) {
+    // renders ignoring set scale; useful for ui that needs specific dimensions
     SDL_Rect renderDest = {x, y, w, h};
 
     // not sure what happens if clip wh don't match given wh; does it stretch?
@@ -233,8 +241,12 @@ public:
 
     currentFrame = 0;
     fTimer = 0;
-    fps = 8;
+    fps = 4;
   }
+
+  float GetFrameTimer() { return this->fTimer; }
+
+  int GetFPS() { return this->fps; }
 
   void SetFPS(int fps) {
     if (fps < 0) {
@@ -254,20 +266,29 @@ public:
     this->currentFrame = f;
   }
 
-  void Render(int x, int y) {
-    fTimer += dt;
+  bool Render(int x, int y) {
+    bool movedFrame = false;
 
-    if (fTimer > (1.0 / fps)) {
-      if (currentFrame + 1 == nFrames)
-        currentFrame = 0;
-      else
-        currentFrame++;
+    if (fps > 0) {
+      fTimer += dt;
 
-      fTimer = 0;
+      if (fTimer > (1.0 / fps)) {
+        movedFrame = true;
+
+        if (currentFrame + 1 == nFrames) {
+          currentFrame = 0;
+        } else {
+          currentFrame++;
+        }
+
+        fTimer = 0;
+      }
     }
 
-    // draw normal
+    // draw
     spriteSheet->Render(x, y, &spriteClips[currentFrame]);
+
+    return movedFrame;
   }
 
 private:
@@ -294,14 +315,15 @@ public:
     mState = BUTTON_STATE_RED;
   }
 
-  void SetPosition(int x, int y){
+  void SetPosition(int x, int y) {
     mPosition.x = x;
     mPosition.y = y;
   }
 
-  void HandleEvent(SDL_Event *e){
+  void HandleEvent(SDL_Event *e) {
     // enter this if any mouse events happen
-    if (e->type == SDL_MOUSEMOTION || e->type == SDL_MOUSEBUTTONDOWN || e->type == SDL_MOUSEBUTTONUP){
+    if (e->type == SDL_MOUSEMOTION || e->type == SDL_MOUSEBUTTONDOWN ||
+        e->type == SDL_MOUSEBUTTONUP) {
       // get mouse pos
       int x, y;
       SDL_GetMouseState(&x, &y);
@@ -309,47 +331,48 @@ public:
       // check if mouse within button
       bool inside = true;
 
-      if (x < mPosition.x){
+      if (x < mPosition.x) {
         inside = false;
       }
 
-      else if (x > mPosition.x + BUTTON_WIDTH){
+      else if (x > mPosition.x + BUTTON_WIDTH) {
         inside = false;
       }
 
-      else if (y < mPosition.y){
+      else if (y < mPosition.y) {
         inside = false;
       }
 
-      else if (y > mPosition.y + BUTTON_HEIGHT){
+      else if (y > mPosition.y + BUTTON_HEIGHT) {
         inside = false;
       }
 
       // change button state depending on mouse event
-      if (!inside){
+      if (!inside) {
         mState = BUTTON_STATE_RED;
       }
 
-      else{
-        switch (e->type){
-          // case SDL_MOUSEMOTION:
-          //   mState = BUTTON_STATE_YELLOW;
-          // break;
-          case SDL_MOUSEBUTTONDOWN:
-            mState = BUTTON_STATE_GREEN;
+      else {
+        switch (e->type) {
+        // case SDL_MOUSEMOTION:
+        //   mState = BUTTON_STATE_YELLOW;
+        // break;
+        case SDL_MOUSEBUTTONDOWN:
+          mState = BUTTON_STATE_GREEN;
           break;
-          case SDL_MOUSEBUTTONUP:
-            mState = BUTTON_STATE_RED;
+        case SDL_MOUSEBUTTONUP:
+          mState = BUTTON_STATE_RED;
           break;
         }
       }
     }
   }
 
-  void Render(){
+  void Render() {
     // render button texture
     // don't use sprite class because state is managed by instance
-    tButton.RenderIgnoreScale(mPosition.x, mPosition.y, BUTTON_WIDTH, BUTTON_HEIGHT, &buttonSpriteClips[mState]);
+    tButton.RenderIgnoreScale(mPosition.x, mPosition.y, BUTTON_WIDTH,
+                              BUTTON_HEIGHT, &buttonSpriteClips[mState]);
   }
 
 private:
@@ -404,6 +427,12 @@ bool Init() {
     return false;
   }
 
+  // start mixer
+  if (Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 2048) < 0) {
+    printf("Could not load mixer: %s\n", SDL_GetError());
+    return false;
+  }
+
   // get window surface
   screenSurface = SDL_GetWindowSurface(window);
 
@@ -412,10 +441,8 @@ bool Init() {
     KEYS[i] = false;
 
   // position button
-  sampleButton.SetPosition(
-    (SCREEN_WIDTH / 2) - (BUTTON_WIDTH / 2),
-    (SCREEN_HEIGHT / 2) - (BUTTON_HEIGHT / 2)
-  );
+  sampleButton.SetPosition((SCREEN_WIDTH / 2) - (BUTTON_WIDTH / 2),
+                           (SCREEN_HEIGHT / 2) - (BUTTON_HEIGHT / 2));
 
   return true;
 }
@@ -455,6 +482,20 @@ bool LoadMedia() {
     success = false;
   }
 
+  // sounds
+  step = Mix_LoadWAV("../assets/step.wav");
+  if (step == NULL) {
+    printf("Failed to load SFX: %s\n", SDL_GetError());
+    success = false;
+  }
+
+  // music
+  music = Mix_LoadMUS("../assets/music.mp3");
+  if (music == NULL) {
+    printf("Failed to load music: %s\n", SDL_GetError());
+    success = false;
+  }
+
   return success;
 }
 
@@ -465,6 +506,12 @@ void Close() {
   tSpriteSheet.Free();
   tButton.Free();
 
+  // free sfx
+  Mix_FreeChunk(step);
+
+  // free music
+  Mix_FreeMusic(music);
+
   // free window, renderer mem
   SDL_DestroyRenderer(renderer);
   SDL_DestroyWindow(window);
@@ -473,6 +520,7 @@ void Close() {
 
   // terminate sdl subsystems
   IMG_Quit();
+  Mix_Quit();
   SDL_Quit();
 }
 
@@ -505,70 +553,74 @@ int main(int argc, char *argv[]) {
         quit = true;
       }
 
-      // keydown event
-      else if (e.type == SDL_KEYDOWN) {
-        switch (e.key.keysym.sym) {
-        case SDLK_ESCAPE:
-          quit = true;
-          break;
-        case SDLK_UP:
-          KEYS[UP] = true;
-          break;
-        case SDLK_DOWN:
-          KEYS[DOWN] = true;
-          break;
-        case SDLK_LEFT:
-          KEYS[LEFT] = true;
-          break;
-        case SDLK_RIGHT:
-          KEYS[RIGHT] = true;
-          break;
-        }
-      }
-
-      // keydown event
-      else if (e.type == SDL_KEYUP) {
-        switch (e.key.keysym.sym) {
-          break;
-        case SDLK_UP:
-          KEYS[UP] = false;
-          break;
-        case SDLK_DOWN:
-          KEYS[DOWN] = false;
-          break;
-        case SDLK_LEFT:
-          KEYS[LEFT] = false;
-          break;
-        case SDLK_RIGHT:
-          KEYS[RIGHT] = false;
-          break;
-        }
-      }
-
       // mouse event
       sampleButton.HandleEvent(&e);
+
+      // pointer to array containing kb state
+      // upd'd everytime PollEvent called, so we should put this in ev. loop
+      const Uint8 *currentKeyStates = SDL_GetKeyboardState(NULL);
+
+      // update input state using latter
+      KEYS[UP] = currentKeyStates[SDL_SCANCODE_UP];
+      KEYS[DOWN] = currentKeyStates[SDL_SCANCODE_DOWN];
+      KEYS[LEFT] = currentKeyStates[SDL_SCANCODE_LEFT];
+      KEYS[RIGHT] = currentKeyStates[SDL_SCANCODE_RIGHT];
+      KEYS[PAUSE] = currentKeyStates[SDL_SCANCODE_P];
+      KEYS[EXIT] = currentKeyStates[SDL_SCANCODE_ESCAPE];
     }
-
-    // update player pos
-    if (KEYS[UP])
-      charPosY -= charSpeed;
-
-    if (KEYS[DOWN])
-      charPosY += charSpeed;
-
-    if (KEYS[LEFT])
-      charPosX -= charSpeed;
-
-    if (KEYS[RIGHT])
-      charPosX += charSpeed;
 
     // clear screen
     SDL_RenderClear(renderer);
 
-    // draw
+    // esc check
+    if (KEYS[EXIT]) {
+      quit = true;
+    }
+
+    // music control, is broken :/
+    // if (KEYS[PAUSE]) {
+    //   if (Mix_PausedMusic()) {
+    //     Mix_ResumeMusic();
+    //   } else {
+    //     Mix_PauseMusic();
+    //   }
+    // }
+
+    // render bg
     tBackground.RenderFill();
 
-    characterSprite.Render(charPosX, charPosY);
+    // button
+    sampleButton.Render();
+
+    // update player
+    bool charMoving = KEYS[UP] || KEYS[DOWN] || KEYS[LEFT] || KEYS[RIGHT];
+    if (charMoving) {
+      // unpause
+      characterSprite.SetFPS(4);
+
+      // movement
+      if (KEYS[UP])
+        charPosY -= charSpeed;
+
+      if (KEYS[DOWN])
+        charPosY += charSpeed;
+
+      if (KEYS[LEFT])
+        charPosX -= charSpeed;
+
+      if (KEYS[RIGHT])
+        charPosX += charSpeed;
+    }
+
+    else {
+      characterSprite.SetFPS(0);
+    }
+
+    // render player, play footsteps if moving frames
+    // TODO: make this check not use the render function!
+    if (characterSprite.Render(charPosX, charPosY) && charMoving) {
+      Mix_PlayChannel(-1, step, 0);
+    }
 
     // text with background
     SDL_RenderFillRect(renderer, &statusBarBG);
@@ -576,8 +628,10 @@ int main(int argc, char *argv[]) {
                        statusBarBG.y +
                            (statusBarBG.h - tSampleText.GetHeight()) / 2);
 
-    // button
-    sampleButton.Render(); 
+    // play music on first free channel (-1)
+    if (Mix_PlayingMusic() == 0) {
+      Mix_PlayMusic(music, -1);
+    }
 
     // update screen
     SDL_RenderPresent(renderer);
