@@ -1,3 +1,32 @@
+# Dialog Box
+
+### Problem
+
+If we're close to an interactable object and we press a button:
+
+1. A dialog box should pop up
+2. It should display text the interactable wants us to read char-by-char on a set delay 
+3. It should disappear when all text has been read
+
+### Approach
+
+Sprites can have a dialog class attached to them
+
+Dialog class should store:
+
+- The text we want
+- Which character we're at in terms of displaying and the total amt. of chars
+- Some sort of timer system to know when to display the next char
+
+We need:
+
+- Each possible character as an individual texture (use a hashmap?)
+- To calculate the position of the next letter based on the previous one
+
+### Tasks
+
+- [ ] Get letters as individual textures and display text using that method
+
 # Notes
 
 ### Adjusted Frame Stepping

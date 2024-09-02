@@ -10,16 +10,21 @@
 #include <SDL2/SDL_timer.h>
 #include <SDL2/SDL_ttf.h>
 #include <SDL2/SDL_video.h>
+#include <SDL_mouse.h>
 #include <chrono>
 #include <stdio.h>
 #include <string.h>
 
 const int SCREEN_WIDTH = 800;
 const int SCREEN_HEIGHT = 800;
+
 const int GLOB_SCALE = 8;
 const int GLOB_FONTSIZE = 32;
+
 const int KEY_COUNT = 4;
-const char *ASSET_PATH = "../assets";
+
+const int BUTTON_WIDTH = 100;
+const int BUTTON_HEIGHT = 100;
 
 SDL_Window *window = NULL;
 SDL_Surface *screenSurface = NULL;
@@ -41,13 +46,11 @@ int charPosX = 0;
 int charPosY = 0;
 int charSpeed = 5;
 
-typedef enum LButtonSprite{
-  BUTTON_SPRITE_MOUSE_OUT,
-  BUTTON_SPRITE_MOUSE_OVER_MOVING,
-  BUTTON_SPRITE_MOUSE_DOWN,
-  BUTTON_SPRITE_MOUSE_UP,
-  BUTTON_SPRITE_TOTAL
-} LButtonSprite;
+typedef enum LButtonState {
+  BUTTON_STATE_YELLOW,
+  BUTTON_STATE_RED,
+  BUTTON_STATE_GREEN
+} LButtonState;
 
 class LTexture {
 public:
@@ -60,10 +63,10 @@ public:
 
   ~LTexture() { Free(); }
 
+// anything inside #if will be ignored by compiler if SDL_TTF ... macro is not
+// defined
+#if defined(SDL_TTF_MAJOR_VERSION)
 
-  // anything inside #if will be ignored by compiler if SDL_TTF ... macro is not defined
-  #if defined(SDL_TTF_MAJOR_VERSION)
-  
   bool LoadFromRenderedText(const char *text, SDL_Color tColor) {
     // free old texture
     Free();
@@ -93,7 +96,7 @@ public:
     return true;
   }
 
-  #endif
+#endif
 
   bool LoadFromFile(const char *path) {
     // remove pre-existing texture
@@ -191,6 +194,15 @@ public:
 
     SDL_RenderCopy(renderer, texture, NULL, &renderDest);
   }
+  
+  void RenderIgnoreScale(int x, int y, int w, int h, SDL_Rect *clip = NULL){
+    // renders ignoring set scale; useful for ui that needs specific dimensions 
+    SDL_Rect renderDest = {x, y, w, h};
+
+    // not sure what happens if clip wh don't match given wh; does it stretch?
+    // yup, it does stretch!
+    SDL_RenderCopy(renderer, texture, clip, &renderDest);
+  }
 
   int GetWidth() { return width; }
 
@@ -223,9 +235,9 @@ public:
     fTimer = 0;
     fps = 8;
   }
-  
-  void SetFPS(int fps){
-    if (fps < 0){
+
+  void SetFPS(int fps) {
+    if (fps < 0) {
       printf("Could not set FPS! Out of bounds.\n");
       return;
     }
@@ -268,28 +280,84 @@ private:
   float fTimer;
 };
 
-class LButton {
-  public:
-    LButton(){
-    
-    }
-
-  void SetPosition(int x, int y);
-  void HandleEvent(SDL_Event *e);
-  void Render();
-
-private:
-  SDL_Point mPosition;
-  LButtonSprite mCurrentSprite;
-};
-
 SDL_Rect charSpriteClips[] = {{0, 0, 16, 16}, {0, 16, 16, 16}};
 
 LSprite characterSprite(&tSpriteSheet, charSpriteClips, 2);
 
 SDL_Rect buttonSpriteClips[] = {{0, 0, 8, 8}, {0, 8, 8, 8}, {0, 16, 8, 8}};
 
-LSprite buttonSprite(&tButton, buttonSpriteClips, 3);
+class LButton {
+public:
+  LButton() {
+    mPosition.x = 0;
+    mPosition.y = 0;
+    mState = BUTTON_STATE_RED;
+  }
+
+  void SetPosition(int x, int y){
+    mPosition.x = x;
+    mPosition.y = y;
+  }
+
+  void HandleEvent(SDL_Event *e){
+    // enter this if any mouse events happen
+    if (e->type == SDL_MOUSEMOTION || e->type == SDL_MOUSEBUTTONDOWN || e->type == SDL_MOUSEBUTTONUP){
+      // get mouse pos
+      int x, y;
+      SDL_GetMouseState(&x, &y);
+
+      // check if mouse within button
+      bool inside = true;
+
+      if (x < mPosition.x){
+        inside = false;
+      }
+
+      else if (x > mPosition.x + BUTTON_WIDTH){
+        inside = false;
+      }
+
+      else if (y < mPosition.y){
+        inside = false;
+      }
+
+      else if (y > mPosition.y + BUTTON_HEIGHT){
+        inside = false;
+      }
+
+      // change button state depending on mouse event
+      if (!inside){
+        mState = BUTTON_STATE_RED;
+      }
+
+      else{
+        switch (e->type){
+          // case SDL_MOUSEMOTION:
+          //   mState = BUTTON_STATE_YELLOW;
+          // break;
+          case SDL_MOUSEBUTTONDOWN:
+            mState = BUTTON_STATE_GREEN;
+          break;
+          case SDL_MOUSEBUTTONUP:
+            mState = BUTTON_STATE_RED;
+          break;
+        }
+      }
+    }
+  }
+
+  void Render(){
+    // render button texture
+    // don't use sprite class because state is managed by instance
+    tButton.RenderIgnoreScale(mPosition.x, mPosition.y, BUTTON_WIDTH, BUTTON_HEIGHT, &buttonSpriteClips[mState]);
+  }
+
+private:
+  SDL_Point mPosition;
+  LButtonState mState;
+};
+
+LButton sampleButton;
 
 bool Init() {
   // start sdl
@@ -343,6 +411,12 @@ bool Init() {
   for (int i = 0; i < KEY_COUNT; ++i)
     KEYS[i] = false;
 
+  // position button
+  sampleButton.SetPosition(
+    (SCREEN_WIDTH / 2) - (BUTTON_WIDTH / 2),
+    (SCREEN_HEIGHT / 2) - (BUTTON_HEIGHT / 2)
+  );
+
   return true;
 }
 
@@ -357,7 +431,7 @@ bool LoadMedia() {
   }
 
   // text
-  tSampleText.LoadFromRenderedText("Sample Text", {255, 255, 255});
+  tSampleText.LoadFromRenderedText("Click the button!", {255, 255, 255});
 
   // mk statusbar bg from text surf size
   statusBarBG = {0, SCREEN_HEIGHT - tSampleText.GetHeight() - 10, SCREEN_WIDTH,
@@ -381,8 +455,6 @@ bool LoadMedia() {
     success = false;
   }
 
-  buttonSprite.SetFPS(0);
-  
   return success;
 }
 
@@ -472,6 +544,9 @@ int main(int argc, char *argv[]) {
           break;
         }
       }
+
+      // mouse event
+      sampleButton.HandleEvent(&e);
     }
 
     // update player pos
@@ -502,7 +577,7 @@ int main(int argc, char *argv[]) {
                            (statusBarBG.h - tSampleText.GetHeight()) / 2);
 
     // button
-    buttonSprite.Render(0, 0);
+    sampleButton.Render(); 
 
     // update screen
     SDL_RenderPresent(renderer);
