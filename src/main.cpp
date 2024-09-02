@@ -15,6 +15,7 @@
 #include <SDL2/SDL_video.h>
 #include <SDL_scancode.h>
 #include <chrono>
+#include <sstream>
 #include <stdio.h>
 #include <string.h>
 
@@ -26,7 +27,7 @@ const int GLOB_FONTSIZE = 32;
 
 const int KEY_COUNT = 4;
 
-const int BUTTON_WIDTH = 89; 
+const int BUTTON_WIDTH = 89;
 const int BUTTON_HEIGHT = 89;
 
 SDL_Window *window = NULL;
@@ -48,11 +49,11 @@ float dt = 0;
 int charPosX = 0;
 int charPosY = 0;
 int charSpeed = 5;
-float charFootstepTimer = 0;
 
-// music, sfx
 Mix_Music *music = NULL;
 Mix_Chunk *step = NULL;
+
+std::stringstream timeText;
 
 typedef enum LButtonState {
   BUTTON_STATE_YELLOW,
@@ -227,7 +228,8 @@ private:
 };
 
 LTexture tBackground;
-LTexture tSampleText;
+LTexture tPrompt;
+LTexture tTimer;
 LTexture tSpriteSheet;
 LTexture tButton;
 
@@ -303,7 +305,7 @@ private:
 
 SDL_Rect charSpriteClips[] = {{0, 0, 16, 16}, {0, 16, 16, 16}};
 
-LSprite characterSprite(&tSpriteSheet, charSpriteClips, 2);
+LSprite charSprite(&tSpriteSheet, charSpriteClips, 2);
 
 SDL_Rect buttonSpriteClips[] = {{0, 0, 8, 8}, {0, 8, 8, 8}, {0, 16, 8, 8}};
 
@@ -382,6 +384,99 @@ private:
 
 LButton sampleButton;
 
+class LTimer {
+public:
+  LTimer() {
+    startTicks = 0;
+    pausedTicks = 0;
+
+    paused = false;
+    started = false;
+  }
+
+  void Start() {
+    // start timer
+
+    started = true;
+    paused = false;
+
+    startTicks = SDL_GetTicks();
+    pausedTicks = 0;
+  }
+
+  void Stop() {
+    // completely stop timer w/o intent of resuming
+
+    started = false;
+    paused = false;
+
+    startTicks = 0;
+    pausedTicks = 0;
+  }
+
+  void Pause() {
+    // can only pause if already running and not paused
+    if (started && !paused) {
+      paused = true;
+
+      // get time kept before pause
+      pausedTicks = SDL_GetTicks() - startTicks;
+
+      // reset counted runtime
+      startTicks = 0;
+    }
+  }
+
+  void Unpause() {
+    if (started && paused) {
+      paused = false;
+
+      // get time kept during pause
+      startTicks = SDL_GetTicks() - pausedTicks;
+
+      // reset paused ticks
+      pausedTicks = 0;
+    }
+  }
+
+  // get timer curr. time
+  Uint32 GetTicks() {
+    // actual kept time
+    Uint32 time = 0;
+
+    if (started) {
+      // if paused, return time kept before pause
+      if (paused) {
+        time = pausedTicks;
+      }
+
+      // if not, return time kept since last start/unpause
+      else {
+        time = SDL_GetTicks() - startTicks;
+      }
+    }
+
+    return time;
+  }
+
+  // check status of timer
+  bool IsStarted() { return started; }
+
+  bool IsPaused() {
+    // paused is different from stopped completely
+    return paused && paused;
+  }
+
+private:
+  Uint32 startTicks;  // time when timer started
+  Uint32 pausedTicks; // ticks when timer paused
+
+  bool paused;
+  bool started;
+};
+
+LTimer timer;
+
 bool Init() {
   // start sdl
   if (SDL_Init(SDL_INIT_VIDEO) < 0) {
@@ -458,11 +553,12 @@ bool LoadMedia() {
   }
 
   // text
-  tSampleText.LoadFromRenderedText("Click the button!", {255, 255, 255});
+  tPrompt.LoadFromRenderedText("Sample text", {255, 255, 255});
+  tTimer.LoadFromRenderedText("Press ENTER to track time!", {255, 255, 255});
 
   // mk statusbar bg from text surf size
-  statusBarBG = {0, SCREEN_HEIGHT - tSampleText.GetHeight() - 10, SCREEN_WIDTH,
-                 tSampleText.GetHeight() + 10};
+  statusBarBG = {0, SCREEN_HEIGHT - tPrompt.GetHeight() - 10, SCREEN_WIDTH,
+                 tPrompt.GetHeight() + 10};
 
   // bg
   if (!tBackground.LoadFromFile("../assets/grass.png")) {
@@ -567,6 +663,31 @@ int main(int argc, char *argv[]) {
       KEYS[RIGHT] = currentKeyStates[SDL_SCANCODE_RIGHT];
       KEYS[PAUSE] = currentKeyStates[SDL_SCANCODE_P];
       KEYS[EXIT] = currentKeyStates[SDL_SCANCODE_ESCAPE];
+
+      // timer control
+
+      if (e.type == SDL_KEYDOWN) {
+        // start/stop
+        if (e.key.keysym.sym == SDLK_s) {
+          if (timer.IsStarted()) {
+            timer.Stop();
+          }
+
+          else {
+            timer.Start();
+          }
+        }
+
+        else if (e.key.keysym.sym == SDLK_p) {
+          if (timer.IsPaused()) {
+            timer.Unpause();
+          }
+
+          else {
+            timer.Pause();
+          }
+        }
+      }
     }
 
     // clear screen
@@ -596,7 +717,7 @@ int main(int argc, char *argv[]) {
     bool charMoving = KEYS[UP] || KEYS[DOWN] || KEYS[LEFT] || KEYS[RIGHT];
     if (charMoving) {
       // unpause
-      characterSprite.SetFPS(4);
+      charSprite.SetFPS(4);
 
       // movement
       if (KEYS[UP])
@@ -613,20 +734,31 @@ int main(int argc, char *argv[]) {
     }
 
     else {
-      characterSprite.SetFPS(0);
+      charSprite.SetFPS(0);
     }
 
     // render player, play footsteps if moving frames
     // TODO: make this check not use the render function!
-    if (characterSprite.Render(charPosX, charPosY) && charMoving) {
+    if (charSprite.Render(charPosX, charPosY) && charMoving) {
       Mix_PlayChannel(-1, step, 0);
     }
 
-    // text with background
+    // timer text with background
     SDL_RenderFillRect(renderer, &statusBarBG);
-    tSampleText.Render((statusBarBG.w / 2) - (tSampleText.GetWidth() / 2),
-                       statusBarBG.y +
-                           (statusBarBG.h - tSampleText.GetHeight()) / 2);
+
+    // set text to render
+    // nice string class!
+    timeText.str("");
+    timeText << "Seconds since start time: "
+             << (timer.GetTicks()) / 1000.0f; // GetTicks is in ms by default
+
+    // load texture with upd'd time
+    if (!tTimer.LoadFromRenderedText(timeText.str().c_str(),
+                                     {255, 255, 255, 255})) {
+      printf("Unable to update time texture: %s\n", SDL_GetError());
+    }
+
+    tTimer.Render(0, statusBarBG.y + (statusBarBG.h - tPrompt.GetHeight()) / 2);
 
     // play music on first free channel (-1)
     if (Mix_PlayingMusic() == 0) {
