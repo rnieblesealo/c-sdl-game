@@ -645,22 +645,19 @@ public:
     posX = x;
     posY = y;
   }
-
-  void Move(Tile *tiles, int nTiles) {
-    // check collision against list
-    // broken; clipping occurs
-    // suspected cause: collider pos compensation when colliding ensures that
-    // we're not colliding next time we check but this method marks our
-    // character as colliding all throughout causing all other checks to be
-    // futile
-    bool isColliding = false;
+  
+  bool CheckTileCollisions(Tile *tiles, int nTiles){
+    // this seems a bit expensive for large sets :/
     for (int i = 0; i < nTiles; ++i) {
       if (CheckCollision(collider, *tiles[i].GetRect())) {
-        isColliding = true;
-        break;
+        return true;
       }
     }
 
+    return false;
+  }
+
+  void Move(Tile *tiles, int nTiles) {
     // update collider with position
     // this fixes clipping (how???)
     posX += velX;
@@ -670,7 +667,7 @@ public:
     // reverse vel if hit bounds
     // account for the fact that pos is in topleft for 2nd part of ||
     // dont move if colliding
-    if (posX < 0 || (posX + sprite.GetWidth() > SCREEN_WIDTH) || isColliding) {
+    if (posX < 0 || (posX + sprite.GetWidth() > SCREEN_WIDTH) || CheckTileCollisions(tiles, TILE_COUNT)) {
       posX -= velX;
       collider.x = posX;
     }
@@ -679,7 +676,7 @@ public:
     collider.y = posY;
     collider.h = sprite.GetHeight();
 
-    if (posY < 0 || (posY + sprite.GetWidth() > SCREEN_HEIGHT) || isColliding) {
+    if (posY < 0 || (posY + sprite.GetWidth() > SCREEN_HEIGHT) || CheckTileCollisions(tiles, TILE_COUNT)) {
       posY -= velY;
       collider.y = posY;
     }

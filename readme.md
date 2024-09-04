@@ -2,6 +2,7 @@
 
 - [ ] `renderDest` is used as collider, but it starts off as 0, 0, 0, 0
 - [ ] Player collision check clipping
+- [ ] Get everything ready for next tutorial
 
 # Notes
 
