@@ -46,10 +46,6 @@ auto lastUpdateTime = std::chrono::high_resolution_clock::now();
 float targetFps = 120;
 float dt = 0;
 
-int charPosX = 0;
-int charPosY = 0;
-int charSpeed = 5;
-
 Mix_Music *music = NULL;
 Mix_Chunk *step = NULL;
 
@@ -232,6 +228,7 @@ LTexture tPrompt;
 LTexture tTimer;
 LTexture tSpriteSheet;
 LTexture tButton;
+LTexture tLavaThingSpriteSheet;
 
 class LSprite {
 public:
@@ -306,6 +303,8 @@ private:
 SDL_Rect charSpriteClips[] = {{0, 0, 16, 16}, {0, 16, 16, 16}};
 
 LSprite charSprite(&tSpriteSheet, charSpriteClips, 2);
+
+SDL_Rect lavaThingSpriteClips[] = {{0, 0, 8, 8}, {0, 8, 8, 8}};
 
 SDL_Rect buttonSpriteClips[] = {{0, 0, 8, 8}, {0, 8, 8, 8}, {0, 16, 8, 8}};
 
@@ -477,8 +476,91 @@ private:
 
 LTimer fpsTimer;
 
-// fps counter w/timer
 int countedFrames = 0;
+
+class Player {
+public:
+  static const int DOT_WIDTH = 20;
+  static const int DOT_HEIGHT = 20;
+  static const int DOT_VEL = 10;
+
+  LSprite sprite;
+
+  // sprite doesn't have a default constructor; must explicitly initialize it using this syntax
+  Player() : sprite(&tLavaThingSpriteSheet, lavaThingSpriteClips, 2){
+    posX = 0;
+    posY = 0;
+
+    velX = 0;
+    velY = 0;
+  }
+
+  void HandleEvent(SDL_Event &e) {
+    // when key is pressed, update velocity to match direction
+    if (e.type == SDL_KEYDOWN && e.key.repeat == 0) {
+      switch (e.key.keysym.sym) {
+      case SDLK_UP:
+        velY -= DOT_VEL;
+        break;
+      case SDLK_DOWN:
+        velY += DOT_VEL;
+        break;
+      case SDLK_LEFT:
+        velX -= DOT_VEL;
+        break;
+      case SDLK_RIGHT:
+        velX += DOT_VEL;
+        break;
+      }
+    }
+
+    // when key released, undo vel change not by setting to 0, but by
+    // subtracting what the downpress did very logical, it doesn't mess with any
+    // other vel changes we made!
+    else if (e.type == SDL_KEYUP && e.key.repeat == 0) {
+      switch (e.key.keysym.sym) {
+      case SDLK_UP:
+        velY += DOT_VEL;
+        break;
+      case SDLK_DOWN:
+        velY -= DOT_VEL;
+        break;
+      case SDLK_LEFT:
+        velX += DOT_VEL;
+        break;
+      case SDLK_RIGHT:
+        velX -= DOT_VEL;
+        break;
+      }
+    }
+  }
+
+  void Move() {
+    posX += velX;
+
+    // reverse vel if hit bounds
+    // account for the fact that pos is in topleft for 2nd part of ||
+    if (posX < 0 || (posX + DOT_WIDTH > SCREEN_WIDTH)) {
+      posX -= velX;
+    }
+
+    posY += velY;
+
+    if (posY < 0 || (posY + DOT_HEIGHT > SCREEN_HEIGHT)) {
+      posY -= velY;
+    }
+  }
+
+  void Render() {
+    sprite.Render(posX, posY); 
+  }
+
+private:
+  int posX, posY;
+  int velX, velY;
+};
+
+Player player;
 
 bool Init() {
   // start sdl
@@ -578,6 +660,12 @@ bool LoadMedia() {
     success = false;
   }
 
+  // lava thing sprite
+  if (!tLavaThingSpriteSheet.LoadFromFile("../assets/lavathing.png")){
+    printf("Could not load image: %s\n", SDL_GetError());
+    success = false;
+  }
+
   // button sprite
   if (!tButton.LoadFromFile("../assets/button.png")) {
     printf("Could not load image: %s\n", SDL_GetError());
@@ -655,9 +743,6 @@ int main(int argc, char *argv[]) {
         quit = true;
       }
 
-      // mouse event
-      sampleButton.HandleEvent(&e);
-
       // pointer to array containing kb state
       // upd'd everytime PollEvent called, so we should put this in ev. loop
       const Uint8 *currentKeyStates = SDL_GetKeyboardState(NULL);
@@ -669,6 +754,12 @@ int main(int argc, char *argv[]) {
       KEYS[RIGHT] = currentKeyStates[SDL_SCANCODE_RIGHT];
       KEYS[PAUSE] = currentKeyStates[SDL_SCANCODE_P];
       KEYS[EXIT] = currentKeyStates[SDL_SCANCODE_ESCAPE];
+
+      // mouse event
+      sampleButton.HandleEvent(&e);
+
+      // player event
+      player.HandleEvent(e);
     }
 
     // clear screen
@@ -695,35 +786,9 @@ int main(int argc, char *argv[]) {
     sampleButton.Render();
 
     // update player
-    bool charMoving = KEYS[UP] || KEYS[DOWN] || KEYS[LEFT] || KEYS[RIGHT];
-    if (charMoving) {
-      // unpause
-      charSprite.SetFPS(4);
-
-      // movement
-      if (KEYS[UP])
-        charPosY -= charSpeed;
-
-      if (KEYS[DOWN])
-        charPosY += charSpeed;
-
-      if (KEYS[LEFT])
-        charPosX -= charSpeed;
-
-      if (KEYS[RIGHT])
-        charPosX += charSpeed;
-    }
-
-    else {
-      charSprite.SetFPS(0);
-    }
-
-    // render player, play footsteps if moving frames
-    // TODO: make this check not use the render function!
-    if (charSprite.Render(charPosX, charPosY) && charMoving) {
-      Mix_PlayChannel(-1, step, 0);
-    }
-
+    player.Move();
+    player.Render();
+    
     // timer text with background
     SDL_RenderFillRect(renderer, &statusBarBG);
 
@@ -731,7 +796,7 @@ int main(int argc, char *argv[]) {
     float avgFPS = countedFrames / (fpsTimer.GetTicks() / 1000.0f);
 
     // if fps is too large, just display it as 0
-    if (avgFPS > 2000000){
+    if (avgFPS > 2000000) {
       avgFPS = 0;
     }
 
@@ -757,7 +822,7 @@ int main(int argc, char *argv[]) {
     // update last time
     lastUpdateTime = currentTime;
 
-    // increment counted frames 
+    // increment counted frames
     countedFrames++;
   }
 
