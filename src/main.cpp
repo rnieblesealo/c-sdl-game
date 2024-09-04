@@ -910,6 +910,19 @@ int main(int argc, char *argv[]) {
         quit = true;
       }
 
+      // music controls
+      else if (e.type == SDL_KEYDOWN){
+        if (e.key.keysym.sym == SDLK_p && e.key.repeat == 0){
+          if (Mix_PausedMusic() == 0) {
+            Mix_PauseMusic();
+          }
+
+          else if (Mix_PausedMusic() == 1) {
+            Mix_ResumeMusic();
+          }
+        }
+      }
+
       // pointer to array containing kb state
       // upd'd everytime PollEvent called, so we should put this in ev. loop
       const Uint8 *currentKeyStates = SDL_GetKeyboardState(NULL);
@@ -936,15 +949,6 @@ int main(int argc, char *argv[]) {
     if (KEYS[EXIT]) {
       quit = true;
     }
-
-    // music control, is broken :/
-    // if (KEYS[PAUSE]) {
-    //   if (Mix_PausedMusic()) {
-    //     Mix_ResumeMusic();
-    //   } else {
-    //     Mix_PauseMusic();
-    //   }
-    // }
 
     // render bg
     tBackground.RenderFill();
@@ -973,9 +977,10 @@ int main(int argc, char *argv[]) {
     // timer text with background
     SDL_RenderFillRect(renderer, &statusBarBG);
 
-    // render fps info
+    // render info
     timeText.str("");
-    timeText << "FPS: " << avgFPS;
+    timeText << "FPS: " << (int)avgFPS
+             << ", Music: " << (Mix_PausedMusic() == 1 ? "Paused" : "Playing");
 
     if (!tTimer.LoadFromRenderedText(timeText.str().c_str(),
                                      {255, 255, 255, 255})) {
@@ -984,7 +989,7 @@ int main(int argc, char *argv[]) {
 
     tTimer.Render(0, statusBarBG.y + (statusBarBG.h - tPrompt.GetHeight()) / 2);
 
-    // play music on first free channel (-1)
+    // play music 
     if (Mix_PlayingMusic() == 0) {
       Mix_PlayMusic(music, -1);
     }
