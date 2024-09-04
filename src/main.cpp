@@ -27,9 +27,6 @@ const int GLOB_FONTSIZE = 32;
 
 const int KEY_COUNT = 4;
 
-const int BUTTON_WIDTH = 89;
-const int BUTTON_HEIGHT = 89;
-
 SDL_Window *window = NULL;
 SDL_Surface *screenSurface = NULL;
 SDL_Renderer *renderer = NULL;
@@ -64,6 +61,7 @@ public:
     width = 0;
     height = 0;
     scale = 0;
+    renderDest = {0, 0, 0, 0};
   }
 
   ~LTexture() { Free(); }
@@ -166,7 +164,7 @@ public:
   void Render(int x, int y, SDL_Rect *clip = NULL) {
     // set render space on screen
     // sprite will be stretched to match
-    SDL_Rect renderDest = {x, y, width * scale, height * scale};
+    renderDest = {x, y, width * scale, height * scale};
 
     // give dest rect the dimensions of the src rect
     if (clip != NULL) {
@@ -181,7 +179,7 @@ public:
 
   void RenderRotated(int x, int y, SDL_Rect *clip, double angle,
                      SDL_Point *center, SDL_RendererFlip flip) {
-    SDL_Rect renderDest = {x, y, width * scale, height * scale};
+    renderDest = {x, y, width * scale, height * scale};
 
     // careful! this isn't given a value by default
     if (clip != NULL) {
@@ -195,28 +193,47 @@ public:
 
   void RenderFill() {
     // stretch to fill screen
-    SDL_Rect renderDest = {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT};
+    renderDest = {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT};
 
     SDL_RenderCopy(renderer, texture, NULL, &renderDest);
   }
 
   void RenderIgnoreScale(int x, int y, int w, int h, SDL_Rect *clip = NULL) {
     // renders ignoring set scale; useful for ui that needs specific dimensions
-    SDL_Rect renderDest = {x, y, w, h};
+    renderDest = {x, y, w, h};
 
     // not sure what happens if clip wh don't match given wh; does it stretch?
     // yup, it does stretch!
     SDL_RenderCopy(renderer, texture, clip, &renderDest);
   }
 
-  int GetWidth() { return width; }
+  // entire texture w + h are given if render dest dimensions match
+  // but if render dest dimensions are different (we do this when rendering
+  // frames, for ex.) we return the modified w, h instead
+  // also if we haven't rendered this yet (renderDest w/h are 0) just use
+  // regular w/h too
 
-  int GetHeight() { return height; }
+  int GetWidth() {
+    if (renderDest.w == width || renderDest.w == 0) {
+      return width;
+    }
+
+    return renderDest.w;
+  }
+
+  int GetHeight() {
+    if (renderDest.h == height || renderDest.h == 0) {
+      return height;
+    }
+
+    return renderDest.h;
+  }
 
   void SetScale(int nScale) { scale = nScale; }
 
 private:
   SDL_Texture *texture;
+  SDL_Rect renderDest;
 
   int width;
   int height;
@@ -229,6 +246,7 @@ LTexture tTimer;
 LTexture tSpriteSheet;
 LTexture tButton;
 LTexture tLavaThingSpriteSheet;
+LTexture tBrick;
 
 class LSprite {
 public:
@@ -244,11 +262,13 @@ public:
 
   float GetFrameTimer() { return this->fTimer; }
 
-  bool GetMovedFrame(){
-    return movedFrame;
-  }
+  bool GetMovedFrame() { return movedFrame; }
 
   int GetFPS() { return this->fps; }
+
+  int GetWidth() { return spriteSheet->GetWidth(); }
+
+  int GetHeight() { return spriteSheet->GetHeight(); }
 
   void SetFPS(int fps) {
     if (fps < 0) {
@@ -314,6 +334,9 @@ SDL_Rect buttonSpriteClips[] = {{0, 0, 8, 8}, {0, 8, 8, 8}, {0, 16, 8, 8}};
 
 class LButton {
 public:
+  static const int BUTTON_WIDTH = 89;
+  static const int BUTTON_HEIGHT = 89;
+
   LButton() {
     mPosition.x = 0;
     mPosition.y = 0;
@@ -482,22 +505,101 @@ LTimer fpsTimer;
 
 int countedFrames = 0;
 
+bool CheckCollision(SDL_Rect a, SDL_Rect b) {
+  // sides of both rects
+  int leftA, leftB;
+  int rightA, rightB;
+  int topA, topB;
+  int bottomA, bottomB;
+
+  // calculate sides of a
+  leftA = a.x;
+  rightA = a.x + a.w;
+  topA = a.y;
+  bottomA = a.y + a.h;
+
+  // calculate sides of b
+  leftB = b.x;
+  rightB = b.x + b.w;
+  topB = b.y;
+  bottomB = b.y + b.h;
+
+  // if any sides from a are outside b
+  if (bottomA <= topB) {
+    return false;
+  }
+
+  if (topA >= bottomB) {
+    return false;
+  }
+
+  if (rightA <= leftB) {
+    return false;
+  }
+
+  if (leftA >= rightB) {
+    return false;
+  }
+
+  // if no sides of a are outside b
+  return true;
+}
+
+class Tile {
+public:
+  static const int TILE_WIDTH = 89;
+  static const int TILE_HEIGHT = 89;
+
+  Tile() {
+    collider.x = 0;
+    collider.y = 0;
+    collider.w = TILE_WIDTH;
+    collider.h = TILE_HEIGHT;
+
+    texture = &tBrick;
+  }
+
+  SDL_Rect *GetRect() { return &collider; }
+
+  void SetPosition(int x, int y) {
+    collider.x = x;
+    collider.y = y;
+  }
+
+  void Render() {
+    texture->RenderIgnoreScale(collider.x, collider.y, collider.w, collider.h);
+  }
+
+private:
+  SDL_Rect collider;
+  LTexture *texture;
+};
+
+const int TILE_COUNT = 5;
+
+Tile tiles[TILE_COUNT];
+
 class Player {
 public:
-  static const int DOT_WIDTH = 20;
-  static const int DOT_HEIGHT = 20;
   static const int DOT_VEL = 5;
 
   LSprite sprite;
 
-  // sprite doesn't have a default constructor; must explicitly initialize it using this syntax
-  Player() : sprite(&tSpriteSheet, charSpriteClips, 2){
+  // sprite doesn't have a default constructor; must explicitly initialize it
+  // using this syntax
+  Player() : sprite(&tSpriteSheet, charSpriteClips, 2) {
     posX = 0;
     posY = 0;
 
     velX = 0;
     velY = 0;
+
+    // will take the dimensions of curr. frame, for better or worse
+    collider.w = 0;
+    collider.h = 0;
   }
+
+  SDL_Rect *GetCollider() { return &this->collider; }
 
   void HandleEvent(SDL_Event &e) {
     // when key is pressed, update velocity to match direction
@@ -519,8 +621,8 @@ public:
     }
 
     // when key released, undo vel change not by setting to 0, but by
-    // subtracting what the downpress did very logical, it doesn't mess with any
-    // other vel changes we made!
+    // subtracting what the downpress did very logical, it doesn't mess with
+    // any other vel changes we made!
     else if (e.type == SDL_KEYUP && e.key.repeat == 0) {
       switch (e.key.keysym.sym) {
       case SDLK_UP:
@@ -539,43 +641,72 @@ public:
     }
   }
 
-  void Move() {
+  void SetPosition(int x, int y) {
+    posX = x;
+    posY = y;
+  }
+
+  void Move(Tile *tiles, int nTiles) {
+    // check collision against list
+    // broken; clipping occurs
+    // suspected cause: collider pos compensation when colliding ensures that
+    // we're not colliding next time we check but this method marks our
+    // character as colliding all throughout causing all other checks to be
+    // futile
+    bool isColliding = false;
+    for (int i = 0; i < nTiles; ++i) {
+      if (CheckCollision(collider, *tiles[i].GetRect())) {
+        isColliding = true;
+        break;
+      }
+    }
+
+    // update collider with position
+    // this fixes clipping (how???)
     posX += velX;
+    collider.x = posX;
+    collider.w = sprite.GetWidth();
 
     // reverse vel if hit bounds
     // account for the fact that pos is in topleft for 2nd part of ||
-    if (posX < 0 || (posX + DOT_WIDTH > SCREEN_WIDTH)) {
+    // dont move if colliding
+    if (posX < 0 || (posX + sprite.GetWidth() > SCREEN_WIDTH) || isColliding) {
       posX -= velX;
+      collider.x = posX;
     }
 
     posY += velY;
+    collider.y = posY;
+    collider.h = sprite.GetHeight();
 
-    if (posY < 0 || (posY + DOT_HEIGHT > SCREEN_HEIGHT)) {
+    if (posY < 0 || (posY + sprite.GetWidth() > SCREEN_HEIGHT) || isColliding) {
       posY -= velY;
+      collider.y = posY;
     }
   }
 
   void Render() {
-    if (KEYS[UP] || KEYS[DOWN] || KEYS[LEFT] || KEYS[RIGHT]){
+    if (KEYS[UP] || KEYS[DOWN] || KEYS[LEFT] || KEYS[RIGHT]) {
       sprite.SetFPS(4);
     }
 
-    else{
+    else {
       sprite.SetFPS(0);
     }
-    
-    sprite.Render(posX, posY); 
+
+    sprite.Render(posX, posY);
   }
 
-  void PlaySound(){
-    if (sprite.GetMovedFrame()){
-      Mix_PlayChannel(-1, step, 0); 
+  void PlaySound() {
+    if (sprite.GetMovedFrame()) {
+      Mix_PlayChannel(-1, step, 0);
     }
   }
 
 private:
   int posX, posY;
   int velX, velY;
+  SDL_Rect collider;
 };
 
 Player player;
@@ -599,9 +730,9 @@ bool Init() {
   // make renderer for window
   renderer = SDL_CreateRenderer(
       window, -1,
-      SDL_RENDERER_ACCELERATED); // we can | SDL_RENDERER_PRESENTVSYNC to enable
-                                 // that, but don't; already have target fps
-                                 // system
+      SDL_RENDERER_ACCELERATED); // we can | SDL_RENDERER_PRESENTVSYNC to
+                                 // enable that, but don't; already have
+                                 // target fps system
 
   if (renderer == NULL) {
     printf("Could not create renderer :%s\n", SDL_GetError());
@@ -639,8 +770,18 @@ bool Init() {
     KEYS[i] = false;
 
   // position button
-  sampleButton.SetPosition((SCREEN_WIDTH / 2) - (BUTTON_WIDTH / 2),
-                           (SCREEN_HEIGHT / 2) - (BUTTON_HEIGHT / 2));
+  sampleButton.SetPosition((SCREEN_WIDTH / 2) - (LButton::BUTTON_WIDTH / 2),
+                           (SCREEN_HEIGHT / 2) - (LButton::BUTTON_HEIGHT / 2));
+
+  // position tiles
+  tiles[0].SetPosition(0, 0);
+  tiles[1].SetPosition(Tile::TILE_WIDTH, 0);
+  tiles[2].SetPosition(Tile::TILE_WIDTH * 2, 0);
+  tiles[3].SetPosition(Tile::TILE_WIDTH * 3, 0);
+  tiles[4].SetPosition(Tile::TILE_WIDTH * 4, 0);
+
+  // position player
+  player.SetPosition(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
 
   // start the fps timer
   fpsTimer.Start();
@@ -672,6 +813,12 @@ bool LoadMedia() {
     success = false;
   }
 
+  // brick
+  if (!tBrick.LoadFromFile("../assets/brick.png")) {
+    printf("Could not load image: %s\n", SDL_GetError());
+    success = false;
+  }
+
   // char sprite
   if (!tSpriteSheet.LoadFromFile("../assets/ness.png")) {
     printf("Could not load image: %s\n", SDL_GetError());
@@ -679,7 +826,7 @@ bool LoadMedia() {
   }
 
   // lava thing sprite
-  if (!tLavaThingSpriteSheet.LoadFromFile("../assets/lavathing.png")){
+  if (!tLavaThingSpriteSheet.LoadFromFile("../assets/lavathing.png")) {
     printf("Could not load image: %s\n", SDL_GetError());
     success = false;
   }
@@ -773,8 +920,8 @@ int main(int argc, char *argv[]) {
       KEYS[PAUSE] = currentKeyStates[SDL_SCANCODE_P];
       KEYS[EXIT] = currentKeyStates[SDL_SCANCODE_ESCAPE];
 
-      // mouse event
-      sampleButton.HandleEvent(&e);
+      // button event
+      // sampleButton.HandleEvent(&e);
 
       // player event
       player.HandleEvent(e);
@@ -800,16 +947,18 @@ int main(int argc, char *argv[]) {
     // render bg
     tBackground.RenderFill();
 
+    // render tiles
+    for (int i = 0; i < 5; ++i) {
+      tiles[i].Render();
+    }
+
     // button
-    sampleButton.Render();
+    // sampleButton.Render();
 
     // update player
-    player.Move();
+    player.Move(tiles, TILE_COUNT);
     player.Render();
     player.PlaySound();
-    
-    // timer text with background
-    SDL_RenderFillRect(renderer, &statusBarBG);
 
     // avg. fps = frames / time
     float avgFPS = countedFrames / (fpsTimer.GetTicks() / 1000.0f);
@@ -818,6 +967,9 @@ int main(int argc, char *argv[]) {
     if (avgFPS > 2000000) {
       avgFPS = 0;
     }
+
+    // timer text with background
+    SDL_RenderFillRect(renderer, &statusBarBG);
 
     // render fps info
     timeText.str("");
