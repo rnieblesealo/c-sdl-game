@@ -235,7 +235,6 @@ public:
   LSprite(LTexture *spriteSheet, SDL_Rect *spriteClips, int nFrames) {
     this->spriteSheet = spriteSheet;
     this->spriteClips = spriteClips;
-
     this->nFrames = nFrames;
 
     currentFrame = 0;
@@ -244,6 +243,10 @@ public:
   }
 
   float GetFrameTimer() { return this->fTimer; }
+
+  bool GetMovedFrame(){
+    return movedFrame;
+  }
 
   int GetFPS() { return this->fps; }
 
@@ -266,7 +269,7 @@ public:
   }
 
   bool Render(int x, int y) {
-    bool movedFrame = false;
+    movedFrame = false;
 
     if (fps > 0) {
       fTimer += dt;
@@ -297,6 +300,7 @@ private:
   int currentFrame;
   int nFrames;
   int fps;
+  bool movedFrame;
   float fTimer;
 };
 
@@ -482,12 +486,12 @@ class Player {
 public:
   static const int DOT_WIDTH = 20;
   static const int DOT_HEIGHT = 20;
-  static const int DOT_VEL = 10;
+  static const int DOT_VEL = 5;
 
   LSprite sprite;
 
   // sprite doesn't have a default constructor; must explicitly initialize it using this syntax
-  Player() : sprite(&tLavaThingSpriteSheet, lavaThingSpriteClips, 2){
+  Player() : sprite(&tSpriteSheet, charSpriteClips, 2){
     posX = 0;
     posY = 0;
 
@@ -552,7 +556,21 @@ public:
   }
 
   void Render() {
+    if (KEYS[UP] || KEYS[DOWN] || KEYS[LEFT] || KEYS[RIGHT]){
+      sprite.SetFPS(4);
+    }
+
+    else{
+      sprite.SetFPS(0);
+    }
+    
     sprite.Render(posX, posY); 
+  }
+
+  void PlaySound(){
+    if (sprite.GetMovedFrame()){
+      Mix_PlayChannel(-1, step, 0); 
+    }
   }
 
 private:
@@ -788,6 +806,7 @@ int main(int argc, char *argv[]) {
     // update player
     player.Move();
     player.Render();
+    player.PlaySound();
     
     // timer text with background
     SDL_RenderFillRect(renderer, &statusBarBG);
