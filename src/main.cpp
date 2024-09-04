@@ -18,6 +18,7 @@
 #include <sstream>
 #include <stdio.h>
 #include <string.h>
+#include <vector>
 
 const int SCREEN_WIDTH = 800;
 const int SCREEN_HEIGHT = 800;
@@ -422,7 +423,6 @@ public:
 
   void Start() {
     // start timer
-
     started = true;
     paused = false;
 
@@ -432,7 +432,6 @@ public:
 
   void Stop() {
     // completely stop timer w/o intent of resuming
-
     started = false;
     paused = false;
 
@@ -576,8 +575,7 @@ private:
 };
 
 const int TILE_COUNT = 5;
-
-Tile tiles[TILE_COUNT];
+std::vector<Tile> tiles;
 
 class Player {
 public:
@@ -645,10 +643,10 @@ public:
     posX = x;
     posY = y;
   }
-  
-  bool CheckTileCollisions(Tile *tiles, int nTiles){
+
+  bool CheckTileCollisions(std::vector<Tile> &tiles) {
     // this seems a bit expensive for large sets :/
-    for (int i = 0; i < nTiles; ++i) {
+    for (int i = 0; i < tiles.size(); ++i) {
       if (CheckCollision(collider, *tiles[i].GetRect())) {
         return true;
       }
@@ -657,7 +655,7 @@ public:
     return false;
   }
 
-  void Move(Tile *tiles, int nTiles) {
+  void Move(std::vector<Tile> &tiles) {
     // update collider with position
     // this fixes clipping (how???)
     posX += velX;
@@ -667,7 +665,8 @@ public:
     // reverse vel if hit bounds
     // account for the fact that pos is in topleft for 2nd part of ||
     // dont move if colliding
-    if (posX < 0 || (posX + sprite.GetWidth() > SCREEN_WIDTH) || CheckTileCollisions(tiles, TILE_COUNT)) {
+    if (posX < 0 || (posX + sprite.GetWidth() > SCREEN_WIDTH) ||
+        CheckTileCollisions(tiles)) {
       posX -= velX;
       collider.x = posX;
     }
@@ -676,7 +675,8 @@ public:
     collider.y = posY;
     collider.h = sprite.GetHeight();
 
-    if (posY < 0 || (posY + sprite.GetWidth() > SCREEN_HEIGHT) || CheckTileCollisions(tiles, TILE_COUNT)) {
+    if (posY < 0 || (posY + sprite.GetWidth() > SCREEN_HEIGHT) ||
+        CheckTileCollisions(tiles)) {
       posY -= velY;
       collider.y = posY;
     }
@@ -770,7 +770,12 @@ bool Init() {
   sampleButton.SetPosition((SCREEN_WIDTH / 2) - (LButton::BUTTON_WIDTH / 2),
                            (SCREEN_HEIGHT / 2) - (LButton::BUTTON_HEIGHT / 2));
 
-  // position tiles
+  // instantiate and position tiles
+
+  for (int i = 0; i < TILE_COUNT; ++i) {
+    tiles.push_back(Tile());
+  }
+
   tiles[0].SetPosition(0, 0);
   tiles[1].SetPosition(Tile::TILE_WIDTH, 0);
   tiles[2].SetPosition(Tile::TILE_WIDTH * 2, 0);
@@ -953,7 +958,7 @@ int main(int argc, char *argv[]) {
     // sampleButton.Render();
 
     // update player
-    player.Move(tiles, TILE_COUNT);
+    player.Move(tiles);
     player.Render();
     player.PlaySound();
 

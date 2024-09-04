@@ -1,10 +1,13 @@
 # Problems
 
 - [ ] `renderDest` is used as collider, but it starts off as 0, 0, 0, 0
-- [ ] Player collision check clipping
-- [ ] Get everything ready for next tutorial
+- [x] Player collision check clipping
+- [x] Get everything ready for next tutorial
 
 # Notes
+
+### Pixel-Perfect Collision
+I'm going to skip this; it's unnecessary for the game I'm making, and it's trivial to figure out how to implement it. See the page for future reference.
 
 ### Adjusted Frame Stepping
 This is how we framestep our game according to our adjusted FPS
