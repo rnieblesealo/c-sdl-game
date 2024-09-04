@@ -475,7 +475,10 @@ private:
   bool started;
 };
 
-LTimer timer;
+LTimer fpsTimer;
+
+// fps counter w/timer
+int countedFrames = 0;
 
 bool Init() {
   // start sdl
@@ -538,6 +541,9 @@ bool Init() {
   // position button
   sampleButton.SetPosition((SCREEN_WIDTH / 2) - (BUTTON_WIDTH / 2),
                            (SCREEN_HEIGHT / 2) - (BUTTON_HEIGHT / 2));
+
+  // start the fps timer
+  fpsTimer.Start();
 
   return true;
 }
@@ -663,31 +669,6 @@ int main(int argc, char *argv[]) {
       KEYS[RIGHT] = currentKeyStates[SDL_SCANCODE_RIGHT];
       KEYS[PAUSE] = currentKeyStates[SDL_SCANCODE_P];
       KEYS[EXIT] = currentKeyStates[SDL_SCANCODE_ESCAPE];
-
-      // timer control
-
-      if (e.type == SDL_KEYDOWN) {
-        // start/stop
-        if (e.key.keysym.sym == SDLK_s) {
-          if (timer.IsStarted()) {
-            timer.Stop();
-          }
-
-          else {
-            timer.Start();
-          }
-        }
-
-        else if (e.key.keysym.sym == SDLK_p) {
-          if (timer.IsPaused()) {
-            timer.Unpause();
-          }
-
-          else {
-            timer.Pause();
-          }
-        }
-      }
     }
 
     // clear screen
@@ -746,16 +727,21 @@ int main(int argc, char *argv[]) {
     // timer text with background
     SDL_RenderFillRect(renderer, &statusBarBG);
 
-    // set text to render
-    // nice string class!
-    timeText.str("");
-    timeText << "Seconds since start time: "
-             << (timer.GetTicks()) / 1000.0f; // GetTicks is in ms by default
+    // avg. fps = frames / time
+    float avgFPS = countedFrames / (fpsTimer.GetTicks() / 1000.0f);
 
-    // load texture with upd'd time
+    // if fps is too large, just display it as 0
+    if (avgFPS > 2000000){
+      avgFPS = 0;
+    }
+
+    // render fps info
+    timeText.str("");
+    timeText << "FPS: " << avgFPS;
+
     if (!tTimer.LoadFromRenderedText(timeText.str().c_str(),
                                      {255, 255, 255, 255})) {
-      printf("Unable to update time texture: %s\n", SDL_GetError());
+      printf("Unable to update text texture: %s\n", SDL_GetError());
     }
 
     tTimer.Render(0, statusBarBG.y + (statusBarBG.h - tPrompt.GetHeight()) / 2);
@@ -770,6 +756,9 @@ int main(int argc, char *argv[]) {
 
     // update last time
     lastUpdateTime = currentTime;
+
+    // increment counted frames 
+    countedFrames++;
   }
 
   return 1;
