@@ -13,7 +13,9 @@
 #include <SDL2/SDL_timer.h>
 #include <SDL2/SDL_ttf.h>
 #include <SDL2/SDL_video.h>
+#include <SDL_clipboard.h>
 #include <SDL_scancode.h>
+#include <SDL_stdinc.h>
 #include <chrono>
 #include <sstream>
 #include <stdio.h>
@@ -53,6 +55,9 @@ Mix_Chunk *step = NULL;
 std::stringstream timeText;
 
 SDL_Rect cam = {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT};
+
+SDL_Color textColor = {255, 255, 255, 255};
+std::string inputText = "Input Text";
 
 typedef enum LButtonState {
   BUTTON_STATE_YELLOW,
@@ -249,6 +254,7 @@ private:
 LTexture tBackground;
 LTexture tPrompt;
 LTexture tTimer;
+LTexture tInput;
 LTexture tSpriteSheet;
 LTexture tButton;
 LTexture tLavaThingSpriteSheet;
@@ -600,7 +606,7 @@ std::vector<Tile> tiles;
 
 class Player {
 public:
-  static const int PLAYER_VEL = 3;
+  static const int PLAYER_VEL = 5;
 
   LSprite sprite;
 
@@ -828,8 +834,9 @@ bool LoadMedia() {
   }
 
   // text
-  tPrompt.LoadFromRenderedText("Sample text", {255, 255, 255});
-  tTimer.LoadFromRenderedText("Press ENTER to track time!", {255, 255, 255});
+  tInput.LoadFromRenderedText(inputText.c_str(), textColor);
+  tPrompt.LoadFromRenderedText("Sample text", textColor);
+  tTimer.LoadFromRenderedText("Press ENTER to track time!", textColor);
 
   // mk statusbar bg from text surf size
   statusBarBG = {0, SCREEN_HEIGHT - tPrompt.GetHeight() - 10, SCREEN_WIDTH,
@@ -916,6 +923,12 @@ int main(int argc, char *argv[]) {
   if (!LoadMedia())
     return 1;
 
+  // start text input
+  SDL_StartTextInput();
+
+  // need to call this when we want game to stop taking text input
+  // SDL_StopTextInput();
+
   // window loop
   SDL_Event e;
   bool quit = false;
@@ -928,6 +941,9 @@ int main(int argc, char *argv[]) {
              currentTime - lastUpdateTime)
              .count();
 
+    // update input text when it changes only
+    bool renderInputText = false;
+
     // if dt does not exceed frame duration, move on
     if (dt < 1 / targetFps)
       continue;
@@ -938,10 +954,10 @@ int main(int argc, char *argv[]) {
         quit = true;
       }
 
-      // music controls
       else if (e.type == SDL_KEYDOWN) {
+        // music controls
         if (e.key.keysym.sym == SDLK_p && e.key.repeat == 0) {
-          if (Mix_PlayingMusic() == 0){
+          if (Mix_PlayingMusic() == 0) {
             Mix_PlayMusic(music, -1);
           }
 
@@ -952,6 +968,59 @@ int main(int argc, char *argv[]) {
           else if (Mix_PausedMusic() == 1) {
             Mix_ResumeMusic();
           }
+        }
+
+        // input special key handling
+
+        // backspace
+        else if (e.key.keysym.sym == SDLK_BACKSPACE && inputText.length() > 0) {
+          inputText.pop_back();
+          renderInputText = true;
+        }
+
+        // copy
+        // getmodstate returns or'd combo of keyboard states, kmodctrl denotes
+        // ctrl held down i think check what that bitwise looks like on paper
+        else if (e.key.keysym.sym == SDLK_c && SDL_GetModState() & KMOD_CTRL) {
+          SDL_SetClipboardText(inputText.c_str());
+        }
+
+        // paste
+        else if (e.key.keysym.sym == SDLK_v && SDL_GetModState() & KMOD_CTRL) {
+          // get text from clipboard into buffer, put it into input and then
+          // clear
+          char *tempText = SDL_GetClipboardText();
+          inputText = tempText;
+
+          // what is the difference between this and free() ?
+          SDL_free(tempText);
+
+          renderInputText = true;
+        }
+      }
+
+      else if (e.type == SDL_TEXTINPUT) {
+        // make sure we aren't copying or pasting
+        bool pressingC = e.text.text[0] == 'c' || e.text.text[0] == 'C';
+        bool pressingV = e.text.text[0] == 'v' || e.text.text[0] == 'V';
+
+        if (!(SDL_GetModState() & KMOD_CTRL && (pressingC || pressingV))) {
+          // append char to input text    
+          inputText += e.text.text;
+          renderInputText = true;
+        }
+      }
+      
+      // render input text if needed
+      if (renderInputText){
+        // make sure text isn't empty
+        if (inputText != ""){
+          tInput.LoadFromRenderedText(inputText.c_str(), textColor); 
+        }
+
+        // if so, just render whitespace
+        else{
+          tInput.LoadFromRenderedText(" ", textColor);
         }
       }
 
@@ -976,7 +1045,7 @@ int main(int argc, char *argv[]) {
 
     // clear screen
     SDL_RenderClear(renderer);
-
+    
     // esc check
     if (KEYS[EXIT]) {
       quit = true;
@@ -1034,17 +1103,20 @@ int main(int argc, char *argv[]) {
     // timer text with background
     SDL_RenderFillRect(renderer, &statusBarBG);
 
-    // render info
-    timeText.str("");
-    timeText << "FPS: " << (int)avgFPS
-             << ", Music: " << (Mix_PausedMusic() == 1 || Mix_PlayingMusic() == 0 ? "Stopped" : "Playing");
+    // render info text
+    // timeText.str("");
+    // timeText << "FPS: " << (int)avgFPS << ", Music: "
+    //          << (Mix_PausedMusic() == 1 || Mix_PlayingMusic() == 0 ? "Stopped"
+    //                                                                : "Playing");
 
-    if (!tTimer.LoadFromRenderedText(timeText.str().c_str(),
-                                     {255, 255, 255, 255})) {
-      printf("Unable to update text texture: %s\n", SDL_GetError());
-    }
+    // if (!tTimer.LoadFromRenderedText(timeText.str().c_str(), textColor)) {
+    //   printf("Unable to update text texture: %s\n", SDL_GetError());
+    // }
 
-    tTimer.Render(0, statusBarBG.y + (statusBarBG.h - tPrompt.GetHeight()) / 2);
+    // tTimer.Render(0, statusBarBG.y + (statusBarBG.h - tPrompt.GetHeight()) / 2);
+
+    // render input text
+    tInput.Render(0, statusBarBG.y + (statusBarBG.h - tPrompt.GetHeight()) / 2);
 
     // update screen
     SDL_RenderPresent(renderer);
