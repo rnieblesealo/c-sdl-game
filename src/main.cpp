@@ -14,6 +14,7 @@
 #include <SDL2/SDL_ttf.h>
 #include <SDL2/SDL_video.h>
 #include <SDL_clipboard.h>
+#include <SDL_rwops.h>
 #include <SDL_scancode.h>
 #include <SDL_stdinc.h>
 #include <chrono>
@@ -58,6 +59,10 @@ SDL_Rect cam = {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT};
 
 SDL_Color textColor = {255, 255, 255, 255};
 std::string inputText = "Input Text";
+
+// gamesave
+const int TOTAL_DATA = 10;
+Sint32 saveData[TOTAL_DATA];
 
 typedef enum LButtonState {
   BUTTON_STATE_YELLOW,
@@ -888,10 +893,71 @@ bool LoadMedia() {
     success = false;
   }
 
+  // savefile, open in binary read mode
+  SDL_RWops *file = SDL_RWFromFile("../assets/save.bin", "r+b");
+
+  // handle nonexistent file
+  if (file == NULL) {
+    printf("Unable to open savefile: %s\n", SDL_GetError());
+
+    // make new file by opening in binary write mode
+    file = SDL_RWFromFile("../assets/save.bin", "w+b");
+
+    if (file != NULL) {
+      printf("New save created!\n");
+
+      // init data
+      for (int i = 0; i < TOTAL_DATA; ++i) {
+        saveData[i] = 0;
+
+        // write to file
+        // args: file obj, address of src. obj, size of src. obj, amt. of
+        // objects we're writing why don't we just write TOTAL_DATA objs?
+        SDL_RWwrite(file, &saveData[i], sizeof(Sint32), 1);
+      }
+
+      // close file
+      SDL_RWclose(file);
+    }
+
+    else {
+      printf("Unable to create save: %s\n", SDL_GetError());
+      success = false;
+    }
+  }
+
+  // if file did exist, read its data instead
+  else {
+    printf("Reading savefile...\n");
+
+    for (int i = 0; i < TOTAL_DATA; ++i) {
+      SDL_RWread(file, &saveData[i], sizeof(Sint32), 1);
+    }
+
+    SDL_RWclose(file);
+  }
+
   return success;
 }
 
 void Close() {
+  // update savefile
+  SDL_RWops *file = SDL_RWFromFile("../assets/save.bin", "w+b");
+
+  if (file != NULL){
+    printf("Saving data...\n");
+
+    for (int i = 0; i < TOTAL_DATA; ++i){
+      SDL_RWwrite(file, &saveData[i], sizeof(Sint32), 1);
+    }
+    
+    SDL_RWclose(file);
+  }
+
+  else{
+    printf("Unable to save file: %s\n", SDL_GetError());
+  }
+
   // free loaded images
   tSpriteSheet.Free();
   tBackground.Free();
@@ -923,11 +989,11 @@ int main(int argc, char *argv[]) {
   if (!LoadMedia())
     return 1;
 
-  // start text input
-  SDL_StartTextInput();
+  // start text input, seems to be on by default?
+  // SDL_StartTextInput();
 
   // need to call this when we want game to stop taking text input
-  // SDL_StopTextInput();
+  SDL_StopTextInput();
 
   // window loop
   SDL_Event e;
@@ -956,7 +1022,8 @@ int main(int argc, char *argv[]) {
 
       else if (e.type == SDL_KEYDOWN) {
         // music controls
-        if (e.key.keysym.sym == SDLK_p && e.key.repeat == 0) {
+        if (e.key.keysym.sym == SDLK_p && e.key.repeat == 0 &&
+            !SDL_IsTextInputActive()) {
           if (Mix_PlayingMusic() == 0) {
             Mix_PlayMusic(music, -1);
           }
@@ -1005,21 +1072,21 @@ int main(int argc, char *argv[]) {
         bool pressingV = e.text.text[0] == 'v' || e.text.text[0] == 'V';
 
         if (!(SDL_GetModState() & KMOD_CTRL && (pressingC || pressingV))) {
-          // append char to input text    
+          // append char to input text
           inputText += e.text.text;
           renderInputText = true;
         }
       }
-      
+
       // render input text if needed
-      if (renderInputText){
+      if (renderInputText) {
         // make sure text isn't empty
-        if (inputText != ""){
-          tInput.LoadFromRenderedText(inputText.c_str(), textColor); 
+        if (inputText != "") {
+          tInput.LoadFromRenderedText(inputText.c_str(), textColor);
         }
 
         // if so, just render whitespace
-        else{
+        else {
           tInput.LoadFromRenderedText(" ", textColor);
         }
       }
@@ -1045,7 +1112,7 @@ int main(int argc, char *argv[]) {
 
     // clear screen
     SDL_RenderClear(renderer);
-    
+
     // esc check
     if (KEYS[EXIT]) {
       quit = true;
@@ -1106,14 +1173,17 @@ int main(int argc, char *argv[]) {
     // render info text
     // timeText.str("");
     // timeText << "FPS: " << (int)avgFPS << ", Music: "
-    //          << (Mix_PausedMusic() == 1 || Mix_PlayingMusic() == 0 ? "Stopped"
-    //                                                                : "Playing");
+    //          << (Mix_PausedMusic() == 1 || Mix_PlayingMusic() == 0 ?
+    //          "Stopped"
+    //                                                                :
+    //                                                                "Playing");
 
     // if (!tTimer.LoadFromRenderedText(timeText.str().c_str(), textColor)) {
     //   printf("Unable to update text texture: %s\n", SDL_GetError());
     // }
 
-    // tTimer.Render(0, statusBarBG.y + (statusBarBG.h - tPrompt.GetHeight()) / 2);
+    // tTimer.Render(0, statusBarBG.y + (statusBarBG.h - tPrompt.GetHeight()) /
+    // 2);
 
     // render input text
     tInput.Render(0, statusBarBG.y + (statusBarBG.h - tPrompt.GetHeight()) / 2);
@@ -1127,6 +1197,8 @@ int main(int argc, char *argv[]) {
     // increment counted frames
     countedFrames++;
   }
+
+  Close();
 
   return 1;
 }
