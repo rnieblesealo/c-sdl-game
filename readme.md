@@ -3,7 +3,7 @@
 - [ ] `renderDest` is used as collider, but it starts off as 0, 0, 0, 0
 - [x] Player collision check clipping
 - [x] Get everything ready for next tutorial
-- [ ] Fix camera/scaling, *see sect. in notes*
+- [x] Fix camera/scaling, *see sect. in notes*
 
 # Notes
 
