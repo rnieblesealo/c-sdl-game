@@ -20,8 +20,11 @@
 #include <string.h>
 #include <vector>
 
-const int SCREEN_WIDTH = 800;
-const int SCREEN_HEIGHT = 800;
+const int SCREEN_WIDTH = 900;
+const int SCREEN_HEIGHT = 900;
+
+const int LEVEL_WIDTH = 3 * SCREEN_WIDTH;
+const int LEVEL_HEIGHT = 3 * SCREEN_HEIGHT;
 
 const int GLOB_SCALE = 8;
 const int GLOB_FONTSIZE = 32;
@@ -49,6 +52,8 @@ Mix_Chunk *step = NULL;
 
 std::stringstream timeText;
 
+SDL_Rect cam = {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT};
+
 typedef enum LButtonState {
   BUTTON_STATE_YELLOW,
   BUTTON_STATE_RED,
@@ -61,7 +66,7 @@ public:
     texture = NULL;
     width = 0;
     height = 0;
-    scale = 0;
+    scale = 1;
     renderDest = {0, 0, 0, 0};
   }
 
@@ -88,9 +93,6 @@ public:
       printf("Unable to make texture from text: %s\n", SDL_GetError());
       return false;
     }
-
-    // because we're already giving fontsize, it's unnecessary to set scale too
-    SetScale(1);
 
     width = tSurf->w;
     height = tSurf->h;
@@ -134,9 +136,6 @@ public:
     // set new texture
     texture = nTexture;
 
-    // set scale to global
-    SetScale(GLOB_SCALE);
-
     return true;
   }
 
@@ -165,13 +164,16 @@ public:
   void Render(int x, int y, SDL_Rect *clip = NULL) {
     // set render space on screen
     // sprite will be stretched to match
-    renderDest = {x, y, width * scale, height * scale};
+    renderDest = {x, y, width, height};
 
     // give dest rect the dimensions of the src rect
     if (clip != NULL) {
-      renderDest.w = clip->w * scale;
-      renderDest.h = clip->h * scale;
+      renderDest.w = clip->w;
+      renderDest.h = clip->h;
     }
+
+    renderDest.w *= scale;
+    renderDest.h *= scale;
 
     // render to screen
     // pass in clip as src rect
@@ -180,13 +182,16 @@ public:
 
   void RenderRotated(int x, int y, SDL_Rect *clip, double angle,
                      SDL_Point *center, SDL_RendererFlip flip) {
-    renderDest = {x, y, width * scale, height * scale};
+    renderDest = {x, y, width, height};
 
     // careful! this isn't given a value by default
     if (clip != NULL) {
-      renderDest.w = clip->w * scale;
-      renderDest.h = clip->h * scale;
+      renderDest.w = clip->w;
+      renderDest.h = clip->h;
     }
+
+    renderDest.w *= scale;
+    renderDest.h *= scale;
 
     // pass sprite through rotation
     SDL_RenderCopyEx(renderer, texture, clip, &renderDest, angle, center, flip);
@@ -216,7 +221,7 @@ public:
 
   int GetWidth() {
     if (renderDest.w == width || renderDest.w == 0) {
-      return width;
+      return width * scale;
     }
 
     return renderDest.w;
@@ -224,7 +229,7 @@ public:
 
   int GetHeight() {
     if (renderDest.h == height || renderDest.h == 0) {
-      return height;
+      return height * scale;
     }
 
     return renderDest.h;
@@ -546,8 +551,8 @@ bool CheckCollision(SDL_Rect a, SDL_Rect b) {
 
 class Tile {
 public:
-  static const int TILE_WIDTH = 89;
-  static const int TILE_HEIGHT = 89;
+  static const int TILE_WIDTH = 100;
+  static const int TILE_HEIGHT = 100;
 
   Tile() {
     collider.x = 0;
@@ -555,23 +560,39 @@ public:
     collider.w = TILE_WIDTH;
     collider.h = TILE_HEIGHT;
 
+    posX = 0;
+    posY = 0;
+
     texture = &tBrick;
   }
 
-  SDL_Rect *GetRect() { return &collider; }
+  SDL_Rect *GetCollider() { return &collider; }
 
-  void SetPosition(int x, int y) {
-    collider.x = x;
-    collider.y = y;
+  void SetPosition(int x, int y, int camX = 0, int camY = 0) {
+    posX = x;
+    posY = y;
+
+    collider.x = x - camX;
+    collider.y = y - camY;
   }
 
-  void Render() {
-    texture->RenderIgnoreScale(collider.x, collider.y, collider.w, collider.h);
+  void ApplyCameraOffset(int camX, int camY) {
+    // tiles are static by nature (pos stays same), but their colliders should
+    // have the cam. offset applied to them
+    collider.x = posX - camX;
+    collider.y = posY - camY;
+  }
+
+  void Render(int camX, int camY) {
+    texture->RenderIgnoreScale(posX - camX, posY - camY, collider.w,
+                               collider.h);
   }
 
 private:
   SDL_Rect collider;
   LTexture *texture;
+
+  int posX, posY;
 };
 
 const int TILE_COUNT = 5;
@@ -579,7 +600,7 @@ std::vector<Tile> tiles;
 
 class Player {
 public:
-  static const int DOT_VEL = 5;
+  static const int PLAYER_VEL = 3;
 
   LSprite sprite;
 
@@ -604,16 +625,16 @@ public:
     if (e.type == SDL_KEYDOWN && e.key.repeat == 0) {
       switch (e.key.keysym.sym) {
       case SDLK_UP:
-        velY -= DOT_VEL;
+        velY -= PLAYER_VEL;
         break;
       case SDLK_DOWN:
-        velY += DOT_VEL;
+        velY += PLAYER_VEL;
         break;
       case SDLK_LEFT:
-        velX -= DOT_VEL;
+        velX -= PLAYER_VEL;
         break;
       case SDLK_RIGHT:
-        velX += DOT_VEL;
+        velX += PLAYER_VEL;
         break;
       }
     }
@@ -624,16 +645,16 @@ public:
     else if (e.type == SDL_KEYUP && e.key.repeat == 0) {
       switch (e.key.keysym.sym) {
       case SDLK_UP:
-        velY += DOT_VEL;
+        velY += PLAYER_VEL;
         break;
       case SDLK_DOWN:
-        velY -= DOT_VEL;
+        velY -= PLAYER_VEL;
         break;
       case SDLK_LEFT:
-        velX += DOT_VEL;
+        velX += PLAYER_VEL;
         break;
       case SDLK_RIGHT:
-        velX -= DOT_VEL;
+        velX -= PLAYER_VEL;
         break;
       }
     }
@@ -647,7 +668,7 @@ public:
   bool CheckTileCollisions(std::vector<Tile> &tiles) {
     // this seems a bit expensive for large sets :/
     for (int i = 0; i < tiles.size(); ++i) {
-      if (CheckCollision(collider, *tiles[i].GetRect())) {
+      if (CheckCollision(collider, *tiles[i].GetCollider())) {
         return true;
       }
     }
@@ -655,34 +676,39 @@ public:
     return false;
   }
 
-  void Move(std::vector<Tile> &tiles) {
+  int GetPosX() { return posX; }
+
+  int GetPosY() { return posY; }
+
+  void Move(std::vector<Tile> &tiles, int camX, int camY) {
     // update collider with position
     // this fixes clipping (how???)
     posX += velX;
-    collider.x = posX;
+    collider.x = posX - camX;
     collider.w = sprite.GetWidth();
 
     // reverse vel if hit bounds
     // account for the fact that pos is in topleft for 2nd part of ||
     // dont move if colliding
-    if (posX < 0 || (posX + sprite.GetWidth() > SCREEN_WIDTH) ||
+    if (posX < 0 || posX + sprite.GetWidth() > LEVEL_WIDTH ||
         CheckTileCollisions(tiles)) {
       posX -= velX;
       collider.x = posX;
     }
 
     posY += velY;
-    collider.y = posY;
+    collider.y = posY - camY;
     collider.h = sprite.GetHeight();
 
-    if (posY < 0 || (posY + sprite.GetWidth() > SCREEN_HEIGHT) ||
+    if (posY < 0 || posY + sprite.GetHeight() > LEVEL_HEIGHT ||
         CheckTileCollisions(tiles)) {
       posY -= velY;
       collider.y = posY;
     }
   }
 
-  void Render() {
+  void Render(int camX, int camY) {
+    // set sprite fps depending on keydown state
     if (KEYS[UP] || KEYS[DOWN] || KEYS[LEFT] || KEYS[RIGHT]) {
       sprite.SetFPS(4);
     }
@@ -691,7 +717,7 @@ public:
       sprite.SetFPS(0);
     }
 
-    sprite.Render(posX, posY);
+    sprite.Render(posX - camX, posY - camY);
   }
 
   void PlaySound() {
@@ -810,7 +836,7 @@ bool LoadMedia() {
                  tPrompt.GetHeight() + 10};
 
   // bg
-  if (!tBackground.LoadFromFile("../assets/grass.png")) {
+  if (!tBackground.LoadFromFile("../assets/grass_large.png")) {
     printf("Could not load image: %s\n", SDL_GetError());
     success = false;
   }
@@ -826,6 +852,8 @@ bool LoadMedia() {
     printf("Could not load image: %s\n", SDL_GetError());
     success = false;
   }
+
+  tSpriteSheet.SetScale(GLOB_SCALE);
 
   // lava thing sprite
   if (!tLavaThingSpriteSheet.LoadFromFile("../assets/lavathing.png")) {
@@ -911,9 +939,13 @@ int main(int argc, char *argv[]) {
       }
 
       // music controls
-      else if (e.type == SDL_KEYDOWN){
-        if (e.key.keysym.sym == SDLK_p && e.key.repeat == 0){
-          if (Mix_PausedMusic() == 0) {
+      else if (e.type == SDL_KEYDOWN) {
+        if (e.key.keysym.sym == SDLK_p && e.key.repeat == 0) {
+          if (Mix_PlayingMusic() == 0){
+            Mix_PlayMusic(music, -1);
+          }
+
+          else if (Mix_PausedMusic() == 0) {
             Mix_PauseMusic();
           }
 
@@ -951,20 +983,45 @@ int main(int argc, char *argv[]) {
     }
 
     // render bg
-    tBackground.RenderFill();
+    tBackground.Render(0, 0, &cam);
 
     // render tiles
     for (int i = 0; i < 5; ++i) {
-      tiles[i].Render();
+      tiles[i].ApplyCameraOffset(cam.x, cam.y);
+      tiles[i].Render(cam.x, cam.y);
     }
 
     // button
     // sampleButton.Render();
 
     // update player
-    player.Move(tiles);
-    player.Render();
+    player.Move(tiles, cam.x, cam.y);
+    player.Render(cam.x, cam.y);
     player.PlaySound();
+
+    // center camera over player
+    cam.x =
+        (player.GetPosX() + player.sprite.GetWidth() / 2) - SCREEN_WIDTH / 2;
+    cam.y =
+        (player.GetPosY() + player.sprite.GetHeight() / 2) - SCREEN_HEIGHT / 2;
+
+    // make sure cam doesn't leave bounds, causes weird stretch
+    // we need to ensure level dimensions match level texture's!
+    if (cam.x < 0) {
+      cam.x = 0;
+    }
+
+    if (cam.x > LEVEL_WIDTH - cam.w) {
+      cam.x = LEVEL_WIDTH - cam.w;
+    }
+
+    if (cam.y < 0) {
+      cam.y = 0;
+    }
+
+    if (cam.y > LEVEL_HEIGHT - cam.h) {
+      cam.y = LEVEL_HEIGHT - cam.h;
+    }
 
     // avg. fps = frames / time
     float avgFPS = countedFrames / (fpsTimer.GetTicks() / 1000.0f);
@@ -980,7 +1037,7 @@ int main(int argc, char *argv[]) {
     // render info
     timeText.str("");
     timeText << "FPS: " << (int)avgFPS
-             << ", Music: " << (Mix_PausedMusic() == 1 ? "Paused" : "Playing");
+             << ", Music: " << (Mix_PausedMusic() == 1 || Mix_PlayingMusic() == 0 ? "Stopped" : "Playing");
 
     if (!tTimer.LoadFromRenderedText(timeText.str().c_str(),
                                      {255, 255, 255, 255})) {
@@ -988,11 +1045,6 @@ int main(int argc, char *argv[]) {
     }
 
     tTimer.Render(0, statusBarBG.y + (statusBarBG.h - tPrompt.GetHeight()) / 2);
-
-    // play music 
-    if (Mix_PlayingMusic() == 0) {
-      Mix_PlayMusic(music, -1);
-    }
 
     // update screen
     SDL_RenderPresent(renderer);

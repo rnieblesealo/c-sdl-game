@@ -3,8 +3,18 @@
 - [ ] `renderDest` is used as collider, but it starts off as 0, 0, 0, 0
 - [x] Player collision check clipping
 - [x] Get everything ready for next tutorial
+- [ ] Fix camera/scaling, *see sect. in notes*
 
 # Notes
+
+### Camera/Scaling
+Because we scale everything at render-time but the original thing is actually a very small image, a camera that moves a clip rect around isn't viable, even if the dest. rect stretches it to the desired size.
+
+We'd have to make the camera work with these unscaled coordinates, which limits us to pixel-perfect camera movement. 
+
+The easiest solution to this problem is to just load the textures with the correct size already.
+
+Specifically, the background texture, because we want to move that src. rect freely around it, and it would help us keep the camera in world-relative coordinates.
 
 ### Pixel-Perfect Collision
 I'm going to skip this; it's unnecessary for the game I'm making, and it's trivial to figure out how to implement it. See the page for future reference.
